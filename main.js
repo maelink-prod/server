@@ -14,7 +14,7 @@ db.execute(`
       follower TEXT NOT NULL
     )
   `);
-  db.execute(`
+db.execute(`
     CREATE TABLE IF NOT EXISTS posts (
       id TEXT PRIMARY KEY,
       post TEXT NOT NULL,
@@ -242,7 +242,7 @@ Deno.serve((req) => {
             console.log("Unauthorized post attempt");
             socket.send(JSON.stringify({
               cmd: "post",
-              status: "error", 
+              status: "error",
               message: "unauthorized",
             }));
             return;
@@ -261,7 +261,7 @@ Deno.serve((req) => {
             if (data.reply_to) {
               const replyPost = db.queryEntries(
                 "SELECT id FROM posts WHERE id = ?",
-                [data.reply_to]
+                [data.reply_to],
               );
               if (replyPost && replyPost.length > 0) {
                 replyToId = data.reply_to;
@@ -274,7 +274,7 @@ Deno.serve((req) => {
                 return;
               }
             }
-            
+
             const timestamp = Math.floor(Date.now() / 1000);
             const id = crypto.randomUUID();
             const stmt = db.prepareQuery(
@@ -285,7 +285,7 @@ Deno.serve((req) => {
               data.post,
               postClient.user,
               timestamp,
-              replyToId
+              replyToId,
             ]);
             stmt.finalize();
             socket.send(JSON.stringify({
@@ -299,7 +299,7 @@ Deno.serve((req) => {
               user: postClient.user,
               post: data.post,
               timestamp: timestamp,
-              reply_to: replyToId
+              reply_to: replyToId,
             });
           } catch (error) {
             console.error("Post error:", error);
@@ -402,104 +402,307 @@ Deno.serve((req) => {
             }));
           }
           break;
-case "follow":
-  console.log("Follow attempt:", data);
-  const followClient = clients.get(socket);
-  if (!followClient?.authenticated) {
-    console.log("Unauthorized follow attempt");
-    socket.send(JSON.stringify({
-      cmd: "follow",
-      status: "error", 
-      message: "unauthorized"
-    }));
-    return;
-  }
-  if (!data.user || typeof data.user !== "string") {
-    console.log("Invalid user to follow:", data);
-    socket.send(JSON.stringify({
-      cmd: "follow",
-      status: "error",
-      message: "invalid user"
-    }));
-    return;
-  }
-  try {
-    const userExists = db.queryEntries(
-      "SELECT user FROM users WHERE user = ?",
-      [data.user]
-    );
-    if (!userExists || userExists.length === 0) {
-      socket.send(JSON.stringify({
-        cmd: "follow",
-        status: "error",
-        message: "user not found"
-      }));
-      return;
-    }
-    const stmt = db.prepareQuery(
-      "INSERT INTO follows (follower, followed) VALUES (?, ?)"
-    );
-    stmt.execute([followClient.user, data.user]);
-    stmt.finalize();
-    socket.send(JSON.stringify({
-      cmd: "follow",
-      status: "success",
-      following: data.user
-    }));
-    console.log("Follow successful:", {
-      follower: followClient.user,
-      following: data.user
-    });
-  } catch (error) {
-    console.error("Follow error:", error);
-    socket.send(JSON.stringify({
-      cmd: "follow", 
-      status: "error",
-      message: "Failed to follow user"
-    }));
-  }
-  break;
-case "followdata":
-  console.log("Follow data fetch attempt:", data);
-  const followDataClient = clients.get(socket);
-  if (!followDataClient?.authenticated) {
-    console.log("Unauthorized follow data fetch attempt");
-    socket.send(JSON.stringify({
-      cmd: "followdata",
-      status: "error",
-      message: "unauthorized"
-    }));
-    return;
-  }
-  if (!data.follower || typeof data.follower !== "string") {
-    console.log("Invalid follower:", data);
-    socket.send(JSON.stringify({
-      cmd: "followdata",
-      status: "error",
-      message: "invalid follower"
-    }));
-    return;
-  }
-  try {
-    const following = db.queryEntries(
-      "SELECT followed FROM follows WHERE follower = ?",
-      [data.follower]
-    );
-    console.log("Found following relationships:", following);
-    socket.send(JSON.stringify({
-      cmd: "followdata",
-      status: "success",
-      following: following
-    }));
-  } catch (error) {
-    console.error("Follow data fetch error:", error);
-    socket.send(JSON.stringify({
-      cmd: "followdata",
-      status: "error",
-      message: "Failed to fetch follow data"
-    }));
-  }
-  break;
+        case "follow":
+          console.log("Follow attempt:", data);
+          const followClient = clients.get(socket);
+          if (!followClient?.authenticated) {
+            console.log("Unauthorized follow attempt");
+            socket.send(JSON.stringify({
+              cmd: "follow",
+              status: "error",
+              message: "unauthorized",
+            }));
+            return;
+          }
+          if (!data.user || typeof data.user !== "string") {
+            console.log("Invalid user to follow:", data);
+            socket.send(JSON.stringify({
+              cmd: "follow",
+              status: "error",
+              message: "invalid user",
+            }));
+            return;
+          }
+          try {
+            const userExists = db.queryEntries(
+              "SELECT user FROM users WHERE user = ?",
+              [data.user],
+            );
+            if (!userExists || userExists.length === 0) {
+              socket.send(JSON.stringify({
+                cmd: "follow",
+                status: "error",
+                message: "user not found",
+              }));
+              return;
+            }
+            const stmt = db.prepareQuery(
+              "INSERT INTO follows (follower, followed) VALUES (?, ?)",
+            );
+            stmt.execute([followClient.user, data.user]);
+            stmt.finalize();
+            socket.send(JSON.stringify({
+              cmd: "follow",
+              status: "success",
+              following: data.user,
+            }));
+            console.log("Follow successful:", {
+              follower: followClient.user,
+              following: data.user,
+            });
+          } catch (error) {
+            console.error("Follow error:", error);
+            socket.send(JSON.stringify({
+              cmd: "follow",
+              status: "error",
+              message: "Failed to follow user",
+            }));
+          }
+          break;
+        case "followdata":
+          console.log("Follow data fetch attempt:", data);
+          const followDataClient = clients.get(socket);
+          if (!followDataClient?.authenticated) {
+            console.log("Unauthorized follow data fetch attempt");
+            socket.send(JSON.stringify({
+              cmd: "followdata",
+              status: "error",
+              message: "unauthorized",
+            }));
+            return;
+          }
+          if (!data.follower || typeof data.follower !== "string") {
+            console.log("Invalid follower:", data);
+            socket.send(JSON.stringify({
+              cmd: "followdata",
+              status: "error",
+              message: "invalid follower",
+            }));
+            return;
+          }
+          try {
+            const following = db.queryEntries(
+              "SELECT followed FROM follows WHERE follower = ?",
+              [data.follower],
+            );
+            console.log("Found following relationships:", following);
+            socket.send(JSON.stringify({
+              cmd: "followdata",
+              status: "success",
+              following: following,
+            }));
+          } catch (error) {
+            console.error("Follow data fetch error:", error);
+            socket.send(JSON.stringify({
+              cmd: "followdata",
+              status: "error",
+              message: "Failed to fetch follow data",
+            }));
+          }
+          break;
+        case "unfollow":
+          console.log("Unfollow attempt:", data);
+          const unfollowClient = clients.get(socket);
+          if (!unfollowClient?.authenticated) {
+            console.log("Unauthorized unfollow attempt");
+            socket.send(JSON.stringify({
+              cmd: "unfollow",
+              status: "error",
+              message: "unauthorized",
+            }));
+            return;
+          }
+          if (!data.user || typeof data.user !== "string") {
+            console.log("Invalid user to unfollow:", data);
+            socket.send(JSON.stringify({
+              cmd: "unfollow",
+              status: "error",
+              message: "invalid user",
+            }));
+            return;
+          }
+          try {
+            const stmt = db.prepareQuery(
+              "DELETE FROM follows WHERE follower = ? AND followed = ?",
+            );
+            stmt.execute([unfollowClient.user, data.user]);
+            stmt.finalize();
+            socket.send(JSON.stringify({
+              cmd: "unfollow",
+              status: "success",
+              unfollowed: data.user,
+            }));
+            console.log("Unfollow successful:", {
+              unfollower: unfollowClient.user,
+              unfollowed: data.user,
+            });
+          } catch (error) {
+            console.error("Unfollow error:", error);
+            socket.send(JSON.stringify({
+              cmd: "unfollow",
+              status: "error",
+              message: "Failed to unfollow user",
+            }));
+          }
+          break;
+        case "timeline":
+          console.log("Timeline fetch attempt:", data);
+          const timelineClient = clients.get(socket);
+          if (!timelineClient?.authenticated) {
+            console.log("Unauthorized timeline fetch attempt");
+            socket.send(JSON.stringify({
+              cmd: "timeline",
+              status: "error",
+              message: "unauthorized",
+            }));
+            return;
+          }
+          try {
+            const offset = data.offset || 0;
+            console.log(
+              "Fetching timeline for user:",
+              timelineClient.user,
+              "with offset:",
+              offset,
+            );
+            const posts = db.queryEntries(
+              `SELECT posts.post, posts.user, posts.created_at, posts.id, posts.reply_to 
+       FROM posts 
+       LEFT JOIN follows ON posts.user = follows.followed
+       WHERE follows.follower = ? OR posts.user = ?
+       ORDER BY posts.created_at DESC 
+       LIMIT ? OFFSET ?`,
+              [timelineClient.user, timelineClient.user, 20, offset],
+            );
+
+            console.log("Fetched timeline posts:", posts);
+            socket.send(JSON.stringify({
+              cmd: "timeline",
+              status: "success",
+              posts: posts,
+            }));
+          } catch (error) {
+            console.error("Timeline fetch error:", error);
+            socket.send(JSON.stringify({
+              cmd: "timeline",
+              status: "error",
+              message: "Failed to fetch timeline",
+            }));
+          }
+          break;
+        case "search":
+          console.log("Search attempt:", data);
+          const searchClient = clients.get(socket);
+          if (!searchClient?.authenticated) {
+            console.log("Unauthorized search attempt");
+            socket.send(JSON.stringify({
+              cmd: "search",
+              status: "error",
+              message: "unauthorized",
+            }));
+            return;
+          }
+          if (!data.query || typeof data.query !== "string") {
+            console.log("Invalid search query:", data);
+            socket.send(JSON.stringify({
+              cmd: "search",
+              status: "error",
+              message: "invalid search query",
+            }));
+            return;
+          }
+          try {
+            const offset = data.offset || 0;
+            const searchQuery = `%${data.query}%`;
+            const results = db.queryEntries(
+              `SELECT post, user, created_at, id, reply_to 
+       FROM posts 
+       WHERE post LIKE ? OR user LIKE ?
+       ORDER BY created_at DESC
+       LIMIT ? OFFSET ?`,
+              [searchQuery, searchQuery, 20, offset],
+            );
+            console.log("Search results:", results);
+            socket.send(JSON.stringify({
+              cmd: "search",
+              status: "success",
+              results: results,
+            }));
+          } catch (error) {
+            console.error("Search error:", error);
+            socket.send(JSON.stringify({
+              cmd: "search",
+              status: "error",
+              message: "Failed to perform search",
+            }));
+          }
+          break;
+        case "userProfile":
+          console.log("User profile fetch attempt:", data);
+          const profileClient = clients.get(socket);
+          if (!profileClient?.authenticated) {
+            console.log("Unauthorized profile fetch attempt");
+            socket.send(JSON.stringify({
+              cmd: "userProfile",
+              status: "error",
+              message: "unauthorized",
+            }));
+            return;
+          }
+          if (!data.username || typeof data.username !== "string") {
+            console.log("Invalid username:", data);
+            socket.send(JSON.stringify({
+              cmd: "userProfile",
+              status: "error",
+              message: "invalid username",
+            }));
+            return;
+          }
+          try {
+            const userDetails = db.queryEntries(
+              "SELECT user, created_at FROM users WHERE user = ?",
+              [data.username],
+            );
+            if (!userDetails || userDetails.length === 0) {
+              socket.send(JSON.stringify({
+                cmd: "userProfile",
+                status: "error",
+                message: "user not found",
+              }));
+              return;
+            }
+            const followers = db.queryEntries(
+              "SELECT COUNT(*) as count FROM follows WHERE followed = ?",
+              [data.username],
+            );
+            const following = db.queryEntries(
+              "SELECT COUNT(*) as count FROM follows WHERE follower = ?",
+              [data.username],
+            );
+            const posts = db.queryEntries(
+              "SELECT COUNT(*) as count FROM posts WHERE user = ?",
+              [data.username],
+            );
+
+            socket.send(JSON.stringify({
+              cmd: "userProfile",
+              status: "success",
+              profile: {
+                ...userDetails[0],
+                followers: followers[0].count,
+                following: following[0].count,
+                posts: posts[0].count,
+              },
+            }));
+          } catch (error) {
+            console.error("Profile fetch error:", error);
+            socket.send(JSON.stringify({
+              cmd: "userProfile",
+              status: "error",
+              message: "Failed to fetch user profile",
+            }));
+          }
+          break;
       }
     } catch (e) {
       console.error("Message handling error:", e);
