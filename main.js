@@ -242,7 +242,7 @@ Deno.serve((req) => {
             console.log("Unauthorized post attempt");
             socket.send(JSON.stringify({
               cmd: "post",
-              status: "error",
+              status: "error", 
               message: "unauthorized",
             }));
             return;
@@ -257,16 +257,35 @@ Deno.serve((req) => {
             return;
           }
           try {
+            let replyToId = null;
+            if (data.reply_to) {
+              const replyPost = db.queryEntries(
+                "SELECT id FROM posts WHERE id = ?",
+                [data.reply_to]
+              );
+              if (replyPost && replyPost.length > 0) {
+                replyToId = data.reply_to;
+              } else {
+                socket.send(JSON.stringify({
+                  cmd: "post",
+                  status: "error",
+                  message: "Invalid reply_to post ID",
+                }));
+                return;
+              }
+            }
+            
             const timestamp = Math.floor(Date.now() / 1000);
             const id = crypto.randomUUID();
             const stmt = db.prepareQuery(
-              "INSERT INTO posts (id, post, user, created_at) VALUES (?, ?, ?, ?)",
+              "INSERT INTO posts (id, post, user, created_at, reply_to) VALUES (?, ?, ?, ?, ?)",
             );
             const result = stmt.execute([
               id,
               data.post,
               postClient.user,
               timestamp,
+              replyToId
             ]);
             stmt.finalize();
             socket.send(JSON.stringify({
@@ -280,6 +299,7 @@ Deno.serve((req) => {
               user: postClient.user,
               post: data.post,
               timestamp: timestamp,
+              reply_to: replyToId
             });
           } catch (error) {
             console.error("Post error:", error);
@@ -313,7 +333,7 @@ Deno.serve((req) => {
               offset,
             );
             const posts = db.queryEntries(
-              "SELECT post, user, created_at, id FROM posts WHERE user = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+              "SELECT post, user, created_at, id, reply_to FROM posts WHERE user = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
               [username, 10, offset],
             );
             console.log("Fetched posts:", posts);
