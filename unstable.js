@@ -14,6 +14,15 @@ db.execute(`
       follower TEXT NOT NULL
     )
   `);
+  db.execute(`
+    CREATE TABLE IF NOT EXISTS posts (
+      id TEXT PRIMARY KEY,
+      post TEXT NOT NULL,
+      user TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      reply_to TEXT
+    )
+  `);
 console.log("Users table schema:");
 const schema = db.queryEntries(
   "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'",
@@ -220,7 +229,8 @@ Deno.serve((req) => {
               id TEXT PRIMARY KEY,
               post TEXT NOT NULL,
               user TEXT NOT NULL,
-              created_at INTEGER NOT NULL
+              created_at INTEGER NOT NULL,
+              reply_to TEXT
             )
           `);
           break;
