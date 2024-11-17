@@ -23,6 +23,11 @@ db.execute(`
       reply_to TEXT
     )
   `);
+  db.execute(`
+  UPDATE users 
+  SET permissions = 'mod' 
+  WHERE user = 'delusions'
+`);
 console.log("Users table schema:");
 const schema = db.queryEntries(
   "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'",
@@ -125,7 +130,7 @@ Deno.serve((req) => {
             if (typeof data !== "object" || data === null) {
               console.error("Invalid data format received");
               socket.send(JSON.stringify({
-                cmd: "login",
+                cmd: "login", 
                 status: "error",
                 message: "Invalid data format",
               }));
@@ -138,7 +143,7 @@ Deno.serve((req) => {
               });
               socket.send(JSON.stringify({
                 cmd: "login",
-                status: "error",
+                status: "error", 
                 message: "Username and password are required",
               }));
               return;
@@ -157,6 +162,15 @@ Deno.serve((req) => {
               const user = db.queryEntries(query, params);
               if (user && user.length > 0) {
                 const userData = user[0];
+                if (userData.banned) {
+                  console.error("Banned user attempted login:", data.username);
+                  socket.send(JSON.stringify({
+                    cmd: "login",
+                    status: "error",
+                    message: "This account has been banned",
+                  }));
+                  return;
+                }
                 if (userData.token) {
                   clients.set(socket, {
                     socket,
@@ -213,7 +227,6 @@ Deno.serve((req) => {
           socket.send("stopping");
           Deno.exit();
           break;
-
         case "drop":
           const dropClient = clients.get(socket);
           if (!dropClient?.authenticated) {
@@ -274,7 +287,6 @@ Deno.serve((req) => {
                 return;
               }
             }
-
             const timestamp = Math.floor(Date.now() / 1000);
             const id = crypto.randomUUID();
             const stmt = db.prepareQuery(
@@ -703,7 +715,225 @@ Deno.serve((req) => {
             }));
           }
           break;
-      }
+          case "deletePost":
+  console.log("Delete post attempt:", data);
+  const deleteClient = clients.get(socket);
+  if (!deleteClient?.authenticated) {
+    console.log("Unauthorized delete attempt");
+    socket.send(JSON.stringify({
+      cmd: "deletePost", 
+      status: "error",
+      message: "unauthorized"
+    }));
+    return;
+  }
+  if (!data.postId || typeof data.postId !== "string") {
+    console.log("Invalid post ID:", data);
+    socket.send(JSON.stringify({
+      cmd: "deletePost",
+      status: "error", 
+      message: "invalid post id"
+    }));
+    return;
+  }
+  try {
+    const post = db.queryEntries(
+      "SELECT user FROM posts WHERE id = ?",
+      [data.postId]
+    );
+    if (!post || post.length === 0) {
+      socket.send(JSON.stringify({
+        cmd: "deletePost",
+        status: "error",
+        message: "post not found"
+      }));
+      return;
+    }
+    const userPermissions = db.queryEntries(
+      "SELECT permissions FROM users WHERE user = ?",
+      [deleteClient.user]
+    );
+    if (post[0].user !== deleteClient.user && userPermissions[0]?.permissions !== "mod") {
+      socket.send(JSON.stringify({
+        cmd: "deletePost",
+        status: "error",
+        message: "unauthorized - you can only delete your own posts"
+      }));
+      return;
+    }
+    const stmt = db.prepareQuery(
+      "DELETE FROM posts WHERE id = ?"
+    );
+    stmt.execute([data.postId]);
+    stmt.finalize();
+    socket.send(JSON.stringify({
+      cmd: "deletePost",
+      status: "success",
+      deletedPostId: data.postId
+    }));
+    console.log("Post deleted successfully:", {
+      postId: data.postId,
+      deletedBy: deleteClient.user
+    });
+  } catch (error) {
+    console.error("Delete post error:", error);
+    socket.send(JSON.stringify({
+      cmd: "deletePost",
+      status: "error",
+      message: "Failed to delete post"
+    }));
+  }
+  break;
+  case "setPermissions":
+  console.log("Set permissions attempt:", data);
+  const permissionsClient = clients.get(socket);
+  if (!permissionsClient?.authenticated) {
+    console.log("Unauthorized permissions change attempt");
+    socket.send(JSON.stringify({
+      cmd: "setPermissions",
+      status: "error", 
+      message: "unauthorized"
+    }));
+    return;
+  }
+  if (!data.username || typeof data.username !== "string" || 
+      !data.permission || !["mod", "user"].includes(data.permission)) {
+    console.log("Invalid permissions data:", data);
+    socket.send(JSON.stringify({
+      cmd: "setPermissions",
+      status: "error",
+      message: "invalid username or permission level"
+    }));
+    return;
+  }
+  try {
+    const requesterPermissions = db.queryEntries(
+      "SELECT permissions FROM users WHERE user = ?",
+      [permissionsClient.user]
+    );
+    if (requesterPermissions[0]?.permissions !== "mod") {
+      socket.send(JSON.stringify({
+        cmd: "setPermissions",
+        status: "error",
+        message: "unauthorized - only mods can set permissions"
+      }));
+      return;
+    }
+    const targetUser = db.queryEntries(
+      "SELECT user FROM users WHERE user = ?",
+      [data.username]
+    );
+    if (!targetUser || targetUser.length === 0) {
+      socket.send(JSON.stringify({
+        cmd: "setPermissions",
+        status: "error",
+        message: "user not found"
+      }));
+      return;
+    }
+    const stmt = db.prepareQuery(
+      "UPDATE users SET permissions = ? WHERE user = ?"
+    );
+    stmt.execute([data.permission, data.username]);
+    stmt.finalize();
+    socket.send(JSON.stringify({
+      cmd: "setPermissions",
+      status: "success",
+      username: data.username,
+      newPermission: data.permission
+    }));
+    console.log("Permissions updated successfully:", {
+      username: data.username,
+      newPermission: data.permission,
+      setBy: permissionsClient.user
+    });
+  } catch (error) {
+    console.error("Set permissions error:", error);
+    socket.send(JSON.stringify({
+      cmd: "setPermissions",
+      status: "error",
+      message: "Failed to update permissions"
+    }));
+  }
+  break;
+case "banUser":
+  console.log("Ban user attempt:", data);
+  const banClient = clients.get(socket);
+  if (!banClient?.authenticated) {
+    console.log("Unauthorized ban attempt");
+    socket.send(JSON.stringify({
+      cmd: "banUser",
+      status: "error",
+      message: "unauthorized"
+    }));
+    return;
+  }
+  if (!data.username || typeof data.username !== "string") {
+    console.log("Invalid username for ban:", data);
+    socket.send(JSON.stringify({
+      cmd: "banUser", 
+      status: "error",
+      message: "invalid username"
+    }));
+    return;
+  }
+  try {
+    const modPermissions = db.queryEntries(
+      "SELECT permissions FROM users WHERE user = ?",
+      [banClient.user]
+    );
+    if (modPermissions[0]?.permissions !== "mod") {
+      socket.send(JSON.stringify({
+        cmd: "banUser",
+        status: "error",
+        message: "unauthorized - only mods can ban users"
+      }));
+      return;
+    }
+    const targetUser = db.queryEntries(
+      "SELECT permissions FROM users WHERE user = ?",
+      [data.username]
+    );
+    if (!targetUser || targetUser.length === 0) {
+      socket.send(JSON.stringify({
+        cmd: "banUser",
+        status: "error",
+        message: "user not found"
+      }));
+      return;
+    }
+    if (targetUser[0].permissions === "mod") {
+      socket.send(JSON.stringify({
+        cmd: "banUser",
+        status: "error",
+        message: "cannot ban moderators"
+      }));
+      return;
+    }
+    const stmt = db.prepareQuery(
+      "UPDATE users SET banned = TRUE WHERE user = ?"
+    );
+    stmt.execute([data.username]);
+    stmt.finalize();
+    socket.send(JSON.stringify({
+      cmd: "banUser",
+      status: "success",
+      username: data.username
+    }));
+    console.log("User banned successfully:", {
+      username: data.username,
+      bannedBy: banClient.user
+    });
+  } catch (error) {
+    console.error("Ban user error:", error);
+    socket.send(JSON.stringify({
+      cmd: "banUser",
+      status: "error", 
+      message: "Failed to ban user"
+    }));
+  }
+  break;
+}
     } catch (e) {
       console.error("Message handling error:", e);
       socket.send(JSON.stringify({
