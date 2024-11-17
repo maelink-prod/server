@@ -9,11 +9,9 @@ db.execute(`
   );
   `);
 db.execute(`
-    CREATE TABLE IF NOT EXISTS posts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      post TEXT NOT NULL,
-      user TEXT NOT NULL,
-      created_at INTEGER NOT NULL
+    CREATE TABLE IF NOT EXISTS follows (
+      followed TEXT PRIMARY KEY,
+      follower TEXT NOT NULL
     )
   `);
 console.log("Users table schema:");
@@ -38,18 +36,26 @@ Deno.serve((req) => {
   }
   const clients = new Map();
   function broadcast(message) {
-    for (const client of clients.values()) {
-      client.socket.send(message);
+    for (const [socket, client] of clients) {
+      if (client.authenticated) {
+        try {
+          socket.send(message);
+        } catch (error) {
+          console.error("Error broadcasting to client:", error);
+        }
+      }
     }
   }
   const { socket, response } = Deno.upgradeWebSocket(req);
   socket.addEventListener("open", () => {
     clients.set(socket, { socket, authenticated: false });
     console.log("client connected");
+    console.log(clients);
   });
   socket.addEventListener("close", () => {
     clients.delete(socket);
     console.log("client disconnected");
+    console.log(clients);
   });
   socket.addEventListener("message", (event) => {
     try {
@@ -61,33 +67,35 @@ Deno.serve((req) => {
         case "register":
           const token = crypto.randomUUID();
           try {
-              const hashedPassword = crypto.subtle.digest(
-              'SHA-256',
-              new TextEncoder().encode(data.password)
+            const hashedPassword = crypto.subtle.digest(
+              "SHA-256",
+              new TextEncoder().encode(data.password),
             )
-            .then(hash => Array.from(new Uint8Array(hash))
-                .map(b => b.toString(16).padStart(2, '0'))
-                .join(''))
-            .then(hashedPassword => {
-              const stmt = db.prepareQuery(
-                "INSERT INTO users (user, token, permissions, password) VALUES (?, ?, ?, ?)"
-              );
-              const result = stmt.execute([
-                data.user,
-                token,
-                "user",
-                hashedPassword
-              ]);
-              stmt.finalize();
-              return result;
-            })
-            .then(result => {
-              socket.send(JSON.stringify({
-                cmd: "register",
-                status: "success",
-                token: token,
-              }));
-            })
+              .then((hash) =>
+                Array.from(new Uint8Array(hash))
+                  .map((b) => b.toString(16).padStart(2, "0"))
+                  .join("")
+              )
+              .then((hashedPassword) => {
+                const stmt = db.prepareQuery(
+                  "INSERT INTO users (user, token, permissions, password) VALUES (?, ?, ?, ?)",
+                );
+                const result = stmt.execute([
+                  data.user,
+                  token,
+                  "user",
+                  hashedPassword,
+                ]);
+                stmt.finalize();
+                return result;
+              })
+              .then((result) => {
+                socket.send(JSON.stringify({
+                  cmd: "register",
+                  status: "success",
+                  token: token,
+                }));
+              });
           } catch (e) {
             console.error("Registration error:", e);
             try {
@@ -127,14 +135,15 @@ Deno.serve((req) => {
               return;
             }
             crypto.subtle.digest(
-              'SHA-256',
-              new TextEncoder().encode(data.password)
-            ).then(hash => {
+              "SHA-256",
+              new TextEncoder().encode(data.password),
+            ).then((hash) => {
               const hashedPassword = Array.from(new Uint8Array(hash))
-                .map(b => b.toString(16).padStart(2, '0'))
-                .join('');
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join("");
 
-              const query = "SELECT * FROM users WHERE user = ? AND password = ?";
+              const query =
+                "SELECT * FROM users WHERE user = ? AND password = ?";
               const params = [data.username, hashedPassword];
               const user = db.queryEntries(query, params);
               if (user && user.length > 0) {
@@ -167,7 +176,7 @@ Deno.serve((req) => {
                   message: "Invalid username or password",
                 }));
               }
-            }).catch(error => {
+            }).catch((error) => {
               console.error("Hashing error:", error);
               socket.send(JSON.stringify({
                 cmd: "login",
@@ -208,7 +217,7 @@ Deno.serve((req) => {
           db.execute(`DROP TABLE IF EXISTS posts`);
           db.execute(`
             CREATE TABLE IF NOT EXISTS posts (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              id TEXT PRIMARY KEY,
               post TEXT NOT NULL,
               user TEXT NOT NULL,
               created_at INTEGER NOT NULL
@@ -239,28 +248,25 @@ Deno.serve((req) => {
           }
           try {
             const timestamp = Math.floor(Date.now() / 1000);
+            const id = crypto.randomUUID();
             const stmt = db.prepareQuery(
-              "INSERT INTO posts (post, user, created_at) VALUES (:post, :user, :timestamp)",
+              "INSERT INTO posts (id, post, user, created_at) VALUES (?, ?, ?, ?)",
             );
-            const result = stmt.execute({
-              post: data.post,
-              user: postClient.user,
-              timestamp: timestamp,
-            });
+            const result = stmt.execute([
+              id,
+              data.post,
+              postClient.user,
+              timestamp,
+            ]);
             stmt.finalize();
-            const broadcastMessage = JSON.stringify({
-              cmd: "rpost",
-              user: postClient.user,
-              post: data.post,
-              timestamp: timestamp,
-            });
-            broadcast(broadcastMessage);
             socket.send(JSON.stringify({
               cmd: "post",
               status: "success",
+              id: id,
               timestamp: timestamp,
             }));
             console.log("Post successful:", {
+              id: id,
               user: postClient.user,
               post: data.post,
               timestamp: timestamp,
@@ -289,10 +295,16 @@ Deno.serve((req) => {
           }
           try {
             const offset = data.offset || 0;
-            console.log("Fetching posts with offset:", offset);
+            const username = data.username;
+            console.log(
+              "Fetching posts for user:",
+              username,
+              "with offset:",
+              offset,
+            );
             const posts = db.queryEntries(
-              "SELECT post, user, created_at FROM posts ORDER BY created_at DESC LIMIT ? OFFSET ?",
-              [10, offset],
+              "SELECT post, user, created_at, id FROM posts WHERE user = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+              [username, 10, offset],
             );
             console.log("Fetched posts:", posts);
             socket.send(JSON.stringify({
@@ -309,6 +321,155 @@ Deno.serve((req) => {
             }));
           }
           break;
+        case "postdata":
+          console.log("Post data fetch attempt:", data);
+          const postDataClient = clients.get(socket);
+          console.log("Client state for post data fetch:", postDataClient);
+          if (!postDataClient?.authenticated) {
+            console.log("Unauthorized post data fetch attempt");
+            socket.send(JSON.stringify({
+              cmd: "postdata",
+              status: "error",
+              message: "unauthorized",
+            }));
+            return;
+          }
+          if (!data.id || typeof data.id !== "string") {
+            console.log("Invalid post ID:", data);
+            socket.send(JSON.stringify({
+              cmd: "postdata",
+              status: "error",
+              message: "invalid post ID",
+            }));
+            return;
+          }
+          try {
+            const post = db.queryEntries(
+              "SELECT post, user, created_at, id FROM posts WHERE id = ?",
+              [data.id],
+            );
+            if (post && post.length > 0) {
+              console.log("Found post:", post[0]);
+              socket.send(JSON.stringify({
+                cmd: "postdata",
+                status: "success",
+                post: post[0],
+              }));
+            } else {
+              console.log("No post found with ID:", data.id);
+              socket.send(JSON.stringify({
+                cmd: "postdata",
+                status: "error",
+                message: "post not found",
+              }));
+            }
+          } catch (error) {
+            console.error("Post data fetch error:", error);
+            socket.send(JSON.stringify({
+              cmd: "postdata",
+              status: "error",
+              message: "Failed to fetch post data",
+            }));
+          }
+          break;
+case "follow":
+  console.log("Follow attempt:", data);
+  const followClient = clients.get(socket);
+  if (!followClient?.authenticated) {
+    console.log("Unauthorized follow attempt");
+    socket.send(JSON.stringify({
+      cmd: "follow",
+      status: "error", 
+      message: "unauthorized"
+    }));
+    return;
+  }
+  if (!data.user || typeof data.user !== "string") {
+    console.log("Invalid user to follow:", data);
+    socket.send(JSON.stringify({
+      cmd: "follow",
+      status: "error",
+      message: "invalid user"
+    }));
+    return;
+  }
+  try {
+    const userExists = db.queryEntries(
+      "SELECT user FROM users WHERE user = ?",
+      [data.user]
+    );
+    if (!userExists || userExists.length === 0) {
+      socket.send(JSON.stringify({
+        cmd: "follow",
+        status: "error",
+        message: "user not found"
+      }));
+      return;
+    }
+    const stmt = db.prepareQuery(
+      "INSERT INTO follows (follower, followed) VALUES (?, ?)"
+    );
+    stmt.execute([followClient.user, data.user]);
+    stmt.finalize();
+    socket.send(JSON.stringify({
+      cmd: "follow",
+      status: "success",
+      following: data.user
+    }));
+    console.log("Follow successful:", {
+      follower: followClient.user,
+      following: data.user
+    });
+  } catch (error) {
+    console.error("Follow error:", error);
+    socket.send(JSON.stringify({
+      cmd: "follow", 
+      status: "error",
+      message: "Failed to follow user"
+    }));
+  }
+  break;
+case "followdata":
+  console.log("Follow data fetch attempt:", data);
+  const followDataClient = clients.get(socket);
+  if (!followDataClient?.authenticated) {
+    console.log("Unauthorized follow data fetch attempt");
+    socket.send(JSON.stringify({
+      cmd: "followdata",
+      status: "error",
+      message: "unauthorized"
+    }));
+    return;
+  }
+  if (!data.follower || typeof data.follower !== "string") {
+    console.log("Invalid follower:", data);
+    socket.send(JSON.stringify({
+      cmd: "followdata",
+      status: "error",
+      message: "invalid follower"
+    }));
+    return;
+  }
+  try {
+    const following = db.queryEntries(
+      "SELECT followed FROM follows WHERE follower = ?",
+      [data.follower]
+    );
+    console.log("Found following relationships:", following);
+    socket.send(JSON.stringify({
+      cmd: "followdata",
+      status: "success",
+      following: following
+    }));
+  } catch (error) {
+    console.error("Follow data fetch error:", error);
+    socket.send(JSON.stringify({
+      cmd: "followdata",
+      status: "error",
+      message: "Failed to fetch follow data"
+    }));
+  }
+  break;
       }
     } catch (e) {
       console.error("Message handling error:", e);
