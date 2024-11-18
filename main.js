@@ -24,6 +24,14 @@ db.execute(`
     )
   `);
   db.execute(`
+    CREATE TABLE IF NOT EXISTS comments (
+      post_id TEXT PRIMARY KEY,
+      post TEXT NOT NULL,
+      user TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )
+  `);
+  db.execute(`
   UPDATE users 
   SET permissions = 'mod' 
   WHERE user = 'delusions'
@@ -930,6 +938,449 @@ case "banUser":
       cmd: "banUser",
       status: "error", 
       message: "Failed to ban user"
+    }));
+  }
+  break;
+  case "unbanUser":
+  console.log("Unban user attempt:", data);
+  const unbanClient = clients.get(socket);
+  if (!unbanClient?.authenticated) {
+    console.log("Unauthorized unban attempt");
+    socket.send(JSON.stringify({
+      cmd: "unbanUser",
+      status: "error",
+      message: "unauthorized"
+    }));
+    return;
+  }
+  if (!data.username || typeof data.username !== "string") {
+    console.log("Invalid username for unban:", data);
+    socket.send(JSON.stringify({
+      cmd: "unbanUser",
+      status: "error", 
+      message: "invalid username"
+    }));
+    return;
+  }
+  try {
+    const modPermissions = db.queryEntries(
+      "SELECT permissions FROM users WHERE user = ?",
+      [unbanClient.user]
+    );
+    if (modPermissions[0]?.permissions !== "mod") {
+      socket.send(JSON.stringify({
+        cmd: "unbanUser",
+        status: "error",
+        message: "unauthorized - only mods can unban users"
+      }));
+      return;
+    }
+    const targetUser = db.queryEntries(
+      "SELECT banned FROM users WHERE user = ?",
+      [data.username]
+    );
+    if (!targetUser || targetUser.length === 0) {
+      socket.send(JSON.stringify({
+        cmd: "unbanUser",
+        status: "error",
+        message: "user not found"
+      }));
+      return;
+    }
+    if (!targetUser[0].banned) {
+      socket.send(JSON.stringify({
+        cmd: "unbanUser",
+        status: "error",
+        message: "user is not banned"
+      }));
+      return;
+    }
+    const stmt = db.prepareQuery(
+      "UPDATE users SET banned = FALSE WHERE user = ?"
+    );
+    stmt.execute([data.username]);
+    stmt.finalize();
+    socket.send(JSON.stringify({
+      cmd: "unbanUser",
+      status: "success",
+      username: data.username
+    }));
+    console.log("User unbanned successfully:", {
+      username: data.username,
+      unbannedBy: unbanClient.user
+    });
+  } catch (error) {
+    console.error("Unban user error:", error);
+    socket.send(JSON.stringify({
+      cmd: "unbanUser",
+      status: "error",
+      message: "Failed to unban user"
+    }));
+  }
+  break;
+  case "getUserStats":
+  console.log("Get user stats attempt:", data);
+  const statsClient = clients.get(socket);
+  if (!statsClient?.authenticated) {
+    console.log("Unauthorized stats request");
+    socket.send(JSON.stringify({
+      cmd: "getUserStats",
+      status: "error",
+      message: "unauthorized"
+    }));
+    return;
+  }
+  if (!data.username || typeof data.username !== "string") {
+    console.log("Invalid username for stats:", data);
+    socket.send(JSON.stringify({
+      cmd: "getUserStats",
+      status: "error",
+      message: "invalid username"
+    }));
+    return;
+  }
+  try {
+    const userStats = db.queryEntries(`
+      SELECT 
+        COUNT(DISTINCT p.id) as total_posts,
+        MAX(p.created_at) as last_post_date,
+        u.created_at as join_date,
+        u.permissions,
+        u.banned
+      FROM users u
+      LEFT JOIN posts p ON u.user = p.user 
+      WHERE u.user = ?
+      GROUP BY u.user, u.created_at, u.permissions, u.banned
+    `, [data.username]);
+
+    if (!userStats || userStats.length === 0) {
+      socket.send(JSON.stringify({
+        cmd: "getUserStats",
+        status: "error",
+        message: "user not found"
+      }));
+      return;
+    }
+
+    socket.send(JSON.stringify({
+      cmd: "getUserStats",
+      status: "success",
+      username: data.username,
+      stats: {
+        totalPosts: userStats[0].total_posts,
+        lastPostDate: userStats[0].last_post_date,
+        joinDate: userStats[0].join_date,
+        permissions: userStats[0].permissions,
+        banned: userStats[0].banned
+      }
+    }));
+
+  } catch (error) {
+    console.error("Get user stats error:", error);
+    socket.send(JSON.stringify({
+      cmd: "getUserStats",
+      status: "error",
+      message: "Failed to get user stats"
+    }));
+  }
+  break;
+case "getOnlineUsers":
+  console.log("Get online users attempt:", data);
+  const onlineClient = clients.get(socket);
+  if (!onlineClient?.authenticated) {
+    console.log("Unauthorized online users request");
+    socket.send(JSON.stringify({
+      cmd: "getOnlineUsers",
+      status: "error", 
+      message: "unauthorized"
+    }));
+    return;
+  }
+
+  try {
+    // Get list of currently connected authenticated users
+    const onlineUsers = Array.from(clients.values())
+      .filter(client => client.authenticated)
+      .map(client => ({
+        username: client.user,
+        // Get additional user info from DB
+        ...db.queryEntries(
+          "SELECT permissions, banned FROM users WHERE user = ?",
+          [client.user]
+        )[0]
+      }));
+
+    socket.send(JSON.stringify({
+      cmd: "getOnlineUsers",
+      status: "success",
+      users: onlineUsers
+    }));
+
+    console.log("Online users list sent:", {
+      count: onlineUsers.length,
+      requestedBy: onlineClient.user
+    });
+
+  } catch (error) {
+    console.error("Get online users error:", error);
+    socket.send(JSON.stringify({
+      cmd: "getOnlineUsers", 
+      status: "error",
+      message: "Failed to get online users"
+    }));
+  }
+  break;
+  case "getPostStats":
+  console.log("Get post stats attempt:", data);
+  const postStatsClient = clients.get(socket);
+  if (!postStatsClient?.authenticated) {
+    console.log("Unauthorized post stats request");
+    socket.send(JSON.stringify({
+      cmd: "getPostStats",
+      status: "error",
+      message: "unauthorized" 
+    }));
+    return;
+  }
+
+  try {
+    const postStats = db.queryEntries(`
+      SELECT
+        COUNT(*) as total_posts,
+        COUNT(DISTINCT user) as unique_posters,
+        MAX(created_at) as latest_post,
+        MIN(created_at) as first_post,
+        AVG(LENGTH(content)) as avg_post_length
+      FROM posts
+    `);
+
+    // Get top 5 most active posters
+    const topPosters = db.queryEntries(`
+      SELECT 
+        user,
+        COUNT(*) as post_count
+      FROM posts
+      GROUP BY user
+      ORDER BY post_count DESC
+      LIMIT 5
+    `);
+
+    socket.send(JSON.stringify({
+      cmd: "getPostStats",
+      status: "success",
+      stats: {
+        totalPosts: postStats[0].total_posts,
+        uniquePosters: postStats[0].unique_posters,
+        latestPost: postStats[0].latest_post,
+        firstPost: postStats[0].first_post,
+        avgPostLength: Math.round(postStats[0].avg_post_length),
+        topPosters: topPosters.map(poster => ({
+          username: poster.user,
+          postCount: poster.post_count
+        }))
+      }
+    }));
+
+    console.log("Post stats sent:", {
+      requestedBy: postStatsClient.user
+    });
+
+  } catch (error) {
+    console.error("Get post stats error:", error);
+    socket.send(JSON.stringify({
+      cmd: "getPostStats",
+      status: "error",
+      message: "Failed to get post statistics"
+    }));
+  }
+  break;
+case "explore":
+  console.log("Explore posts attempt:", data);
+  const exploreClient = clients.get(socket);
+  if (!exploreClient?.authenticated) {
+    console.log("Unauthorized explore request");
+    socket.send(JSON.stringify({
+      cmd: "explore",
+      status: "error",
+      message: "unauthorized"
+    }));
+    return;
+  }
+
+  try {
+    const posts = db.queryEntries(`
+      SELECT 
+        p.id,
+        p.content,
+        p.created_at,
+        p.user,
+        u.permissions
+      FROM posts p
+      JOIN users u ON p.user = u.user
+      WHERE u.banned = FALSE
+      ORDER BY p.created_at DESC
+      LIMIT 50
+    `);
+
+    socket.send(JSON.stringify({
+      cmd: "explore",
+      status: "success",
+      posts: posts.map(post => ({
+        id: post.id,
+        content: post.content,
+        createdAt: post.created_at,
+        username: post.user,
+        userPermissions: post.permissions
+      }))
+    }));
+
+    console.log("Explore posts sent:", {
+      count: posts.length,
+      requestedBy: exploreClient.user
+    });
+
+  } catch (error) {
+    console.error("Explore posts error:", error);
+    socket.send(JSON.stringify({
+      cmd: "explore",
+      status: "error",
+      message: "Failed to get posts"
+    }));
+  }
+  break;
+  case "addComment":
+  console.log("Add comment attempt:", data);
+  const commentClient = clients.get(socket);
+  if (!commentClient?.authenticated) {
+    console.log("Unauthorized comment attempt");
+    socket.send(JSON.stringify({
+      cmd: "addComment",
+      status: "error",
+      message: "unauthorized"
+    }));
+    return;
+  }
+
+  if (!data.postId || !data.content || typeof data.content !== "string") {
+    console.log("Invalid comment data:", data);
+    socket.send(JSON.stringify({
+      cmd: "addComment", 
+      status: "error",
+      message: "invalid comment data"
+    }));
+    return;
+  }
+
+  try {
+    const post = db.queryEntries(
+      "SELECT id FROM posts WHERE id = ?",
+      [data.postId]
+    );
+
+    if (!post || post.length === 0) {
+      socket.send(JSON.stringify({
+        cmd: "addComment",
+        status: "error",
+        message: "post not found"
+      }));
+      return;
+    }
+
+    // Insert comment
+    const stmt = db.prepareQuery(`
+      INSERT INTO comments (post_id, user, content, created_at)
+      VALUES (?, ?, ?, datetime('now'))
+    `);
+    stmt.execute([data.postId, commentClient.user, data.content]);
+    stmt.finalize();
+
+    socket.send(JSON.stringify({
+      cmd: "addComment",
+      status: "success",
+      comment: {
+        postId: data.postId,
+        content: data.content,
+        username: commentClient.user
+      }
+    }));
+
+    console.log("Comment added successfully:", {
+      postId: data.postId,
+      username: commentClient.user
+    });
+
+  } catch (error) {
+    console.error("Add comment error:", error);
+    socket.send(JSON.stringify({
+      cmd: "addComment",
+      status: "error",
+      message: "Failed to add comment"
+    }));
+  }
+  break;
+
+case "getComments":
+  console.log("Get comments attempt:", data);
+  const getCommentsClient = clients.get(socket);
+  if (!getCommentsClient?.authenticated) {
+    console.log("Unauthorized get comments request");
+    socket.send(JSON.stringify({
+      cmd: "getComments",
+      status: "error",
+      message: "unauthorized"
+    }));
+    return;
+  }
+
+  if (!data.postId) {
+    console.log("Invalid post ID for comments:", data);
+    socket.send(JSON.stringify({
+      cmd: "getComments",
+      status: "error",
+      message: "invalid post ID"
+    }));
+    return;
+  }
+
+  try {
+    const comments = db.queryEntries(`
+      SELECT 
+        c.id,
+        c.content,
+        c.created_at,
+        c.user,
+        u.permissions
+      FROM comments c
+      JOIN users u ON c.user = u.user
+      WHERE c.post_id = ? AND u.banned = FALSE
+      ORDER BY c.created_at ASC
+    `, [data.postId]);
+
+    socket.send(JSON.stringify({
+      cmd: "getComments",
+      status: "success",
+      postId: data.postId,
+      comments: comments.map(comment => ({
+        id: comment.id,
+        content: comment.content,
+        createdAt: comment.created_at,
+        username: comment.user,
+        userPermissions: comment.permissions
+      }))
+    }));
+
+    console.log("Comments sent:", {
+      postId: data.postId,
+      count: comments.length,
+      requestedBy: getCommentsClient.user
+    });
+
+  } catch (error) {
+    console.error("Get comments error:", error);
+    socket.send(JSON.stringify({
+      cmd: "getComments",
+      status: "error",
+      message: "Failed to get comments"
     }));
   }
   break;
