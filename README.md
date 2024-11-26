@@ -1,6 +1,6 @@
 ![banner](https://u.cubeupload.com/zzbooplister/adorbannerzz1.png)
 
-# maelink server
+# server
 <a href="https://discord.gg/drPWBDpjES"><img src="https://adthoughtsglobal.github.io/featured%20sections/NovaCore.png" height="30"></a>
 
 This is the backend server for maelink.
