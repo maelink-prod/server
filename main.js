@@ -42,7 +42,12 @@ async function handleRegister(req) {
         message: "Username and password are required"
       }), {
         status: 400,
-        headers: { "Content-Type": "application/json" }
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization"
+        }
       });
     }
 
@@ -64,7 +69,12 @@ async function handleRegister(req) {
       token: token
     }), {
       status: 200,
-      headers: { "Content-Type": "application/json" }
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
     });
   } catch (e) {
     console.error("Registration error:", e);
@@ -73,7 +83,12 @@ async function handleRegister(req) {
       message: `Registration failed: ${e.message}`
     }), {
       status: 500,
-      headers: { "Content-Type": "application/json" }
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS", 
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
     });
   }
 }
@@ -87,7 +102,12 @@ async function handleLogin(req) {
         message: "Username and password are required"
       }), {
         status: 400,
-        headers: { "Content-Type": "application/json" }
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization"
+        }
       });
     }
 
@@ -110,7 +130,12 @@ async function handleLogin(req) {
           message: "This account has been banned"
         }), {
           status: 403,
-          headers: { "Content-Type": "application/json" }
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization"
+          }
         });
       }
 
@@ -119,7 +144,12 @@ async function handleLogin(req) {
         token: userData.token
       }), {
         status: 200,
-        headers: { "Content-Type": "application/json" }
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization"
+        }
       });
     }
 
@@ -128,7 +158,12 @@ async function handleLogin(req) {
       message: "Invalid credentials"
     }), {
       status: 401,
-      headers: { "Content-Type": "application/json" }
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
     });
   } catch (e) {
     return new Response(JSON.stringify({
@@ -136,7 +171,12 @@ async function handleLogin(req) {
       message: `Login failed: ${e.message}`
     }), {
       status: 500,
-      headers: { "Content-Type": "application/json" }
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
     });
   }
 }
@@ -149,7 +189,12 @@ async function handlePost(req) {
       message: "Unauthorized"
     }), {
       status: 401,
-      headers: { "Content-Type": "application/json" }
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
     });
   }
 
@@ -164,7 +209,12 @@ async function handlePost(req) {
       message: "Invalid token"
     }), {
       status: 401,
-      headers: { "Content-Type": "application/json" }
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
     });
   }
 
@@ -186,7 +236,12 @@ async function handlePost(req) {
       timestamp: timestamp
     }), {
       status: 200,
-      headers: { "Content-Type": "application/json" }
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
     });
   } catch (e) {
     return new Response(JSON.stringify({
@@ -194,7 +249,12 @@ async function handlePost(req) {
       message: "Failed to save post"
     }), {
       status: 500,
-      headers: { "Content-Type": "application/json" }
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
     });
   }
 }
@@ -207,7 +267,12 @@ async function handleFetch(req) {
       message: "Unauthorized"
     }), {
       status: 401,
-      headers: { "Content-Type": "application/json" }
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
     });
   }
 
@@ -222,7 +287,12 @@ async function handleFetch(req) {
       message: "Invalid token"
     }), {
       status: 401,
-      headers: { "Content-Type": "application/json" }
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
     });
   }
 
@@ -241,7 +311,12 @@ async function handleFetch(req) {
       posts: posts
     }), {
       status: 200,
-      headers: { "Content-Type": "application/json" }
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
     });
   } catch (e) {
     return new Response(JSON.stringify({
@@ -249,41 +324,91 @@ async function handleFetch(req) {
       message: "Failed to fetch posts"
     }), {
       status: 500,
-      headers: { "Content-Type": "application/json" }
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
     });
   }
 }
 
 Deno.serve((req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
+    });
+  }
+
   const url = new URL(req.url);
   const path = url.pathname;
 
   switch (path) {
     case "/register":
       if (req.method !== "POST") {
-        return new Response(null, { status: 405 });
+        return new Response(null, { 
+          status: 405,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization"
+          }
+        });
       }
       return handleRegister(req);
 
     case "/login":
       if (req.method !== "POST") {
-        return new Response(null, { status: 405 });
+        return new Response(null, { 
+          status: 405,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization"
+          }
+        });
       }
       return handleLogin(req);
 
     case "/post":
       if (req.method !== "POST") {
-        return new Response(null, { status: 405 });
+        return new Response(null, { 
+          status: 405,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization"
+          }
+        });
       }
       return handlePost(req);
 
     case "/posts":
       if (req.method !== "GET") {
-        return new Response(null, { status: 405 });
+        return new Response(null, { 
+          status: 405,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization"
+          }
+        });
       }
       return handleFetch(req);
 
     default:
-      return new Response(null, { status: 404 });
+      return new Response(null, { 
+        status: 404,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization"
+        }
+      });
   }
 });
