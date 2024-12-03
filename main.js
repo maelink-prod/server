@@ -31,6 +31,272 @@ db.execute(`
     created_at INTEGER NOT NULL
   )
 `);
+db.execute(`
+  CREATE TABLE IF NOT EXISTS rtposts (
+    id TEXT PRIMARY KEY,
+    post TEXT NOT NULL,
+    user TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    reply_to TEXT
+  )
+`);
+Deno.serve({port: 3000, handler: (req) => {
+  if (req.headers.get("upgrade") != "websocket") {
+    return new Response(null, { status: 501 });
+  }
+  const clients = new Map();
+  function broadcast(message) {
+    for (const [socket, client] of clients) {
+      if (client.authenticated) {
+        try {
+          socket.send(message);
+        } catch (error) {
+          console.error("Error broadcasting to client:", error);
+        }
+      }
+    }
+  }
+  const { socket, response } = Deno.upgradeWebSocket(req);
+  socket.addEventListener("open", () => {
+    clients.set(socket, { socket, authenticated: false });
+    console.log("client connected");
+    console.log(clients);
+  });
+  socket.addEventListener("close", () => {
+    clients.delete(socket);
+    console.log("client disconnected");
+    console.log(clients);
+  });
+  socket.addEventListener("message", (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      switch (data.cmd) {
+        case "ping":
+          socket.send("pong");
+          break;
+          case "login":
+          try {
+            if (typeof data !== "object" || data === null) {
+              console.error("Invalid data format received");
+              socket.send(JSON.stringify({
+                cmd: "login",
+                status: "error",
+                message: "Invalid data format",
+              }));
+              return;
+            }
+            if (!data.username || !data.password) {
+              console.error("Missing credentials:", {
+                username: data.username,
+                password: !!data.password,
+              });
+              socket.send(JSON.stringify({
+                cmd: "login",
+                status: "error",
+                message: "Username and password are required",
+              }));
+              return;
+            }
+            crypto.subtle.digest(
+              "SHA-256",
+              new TextEncoder().encode(data.password),
+            ).then((hash) => {
+              const hashedPassword = Array.from(new Uint8Array(hash))
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join("");
+
+              const query =
+                "SELECT * FROM users WHERE user = ? AND password = ?";
+              const params = [data.username, hashedPassword];
+              const user = db.queryEntries(query, params);
+              if (user && user.length > 0) {
+                const userData = user[0];
+                if (userData.banned) {
+                  console.error("Banned user attempted login:", data.username);
+                  socket.send(JSON.stringify({
+                    cmd: "login",
+                    status: "error",
+                    message: "This account has been banned",
+                  }));
+                  return;
+                }
+                if (userData.token) {
+                  clients.set(socket, {
+                    socket,
+                    authenticated: true,
+                    user: data.username,
+                  });
+                  socket.send(JSON.stringify({
+                    cmd: "login",
+                    status: "success",
+                    token: userData.token,
+                  }));
+                  console.log("Login successful for user:", data.username);
+                } else {
+                  console.error("Missing token for user:", data.username);
+                  socket.send(JSON.stringify({
+                    cmd: "login",
+                    status: "error",
+                    message: "Invalid user data - missing token",
+                  }));
+                }
+              } else {
+                console.error("No user found for credentials");
+                socket.send(JSON.stringify({
+                  cmd: "login",
+                  status: "error",
+                  message: "Invalid username or password",
+                }));
+              }
+            }).catch((error) => {
+              console.error("Hashing error:", error);
+              socket.send(JSON.stringify({
+                cmd: "login",
+                status: "error",
+                message: "Error processing login",
+              }));
+            });
+          } catch (dbError) {
+            console.error("Login error:", dbError);
+            socket.send(JSON.stringify({
+              cmd: "login",
+              status: "error",
+              message: "Database error during login",
+            }));
+          }
+          break;
+        case "post":
+          console.log("Post attempt:", data);
+          const postClient = clients.get(socket);
+          console.log("Client state:", postClient);
+          if (!postClient?.authenticated) {
+            console.log("Unauthorized post attempt");
+            socket.send(JSON.stringify({
+              cmd: "post", 
+              status: "error",
+              message: "unauthorized",
+            }));
+            return;
+          }
+          if (!data.post || typeof data.post !== "string") {
+            console.log("Invalid post data:", data);
+            socket.send(JSON.stringify({
+              cmd: "post",
+              status: "error", 
+              message: "invalid post data",
+            }));
+            return;
+          }
+          try {
+            let replyToId = null;
+            if (data.reply_to) {
+              const replyPost = db.queryEntries(
+                "SELECT id FROM rtposts WHERE id = ?",
+                [data.reply_to],
+              );
+              if (replyPost && replyPost.length > 0) {
+                replyToId = data.reply_to;
+              } else {
+                socket.send(JSON.stringify({
+                  cmd: "post",
+                  status: "error",
+                  message: "Invalid reply_to post ID",
+                }));
+                return;
+              }
+            }
+            const timestamp = Math.floor(Date.now() / 1000);
+            const id = crypto.randomUUID();
+            const stmt = db.prepareQuery(
+              "INSERT INTO rtposts (id, post, user, created_at, reply_to) VALUES (?, ?, ?, ?, ?)",
+            );
+            stmt.finalize();
+            const postNotification = JSON.stringify({
+              cmd: "new_post",
+              post: {
+                id: id,
+                post: data.post,
+                user: postClient.user,
+                created_at: timestamp,
+                reply_to: replyToId
+              }
+            });
+            for (const [clientSocket, clientData] of clients) {
+              if (clientData.authenticated) {
+                clientSocket.send(postNotification);
+              }
+            }
+            socket.send(JSON.stringify({
+              cmd: "post",
+              status: "success",
+              id: id,
+              timestamp: timestamp,
+            }));
+            console.log("Post successful:", {
+              id: id,
+              user: postClient.user,
+              post: data.post,
+              timestamp: timestamp,
+              reply_to: replyToId,
+            });
+          } catch (error) {
+            console.error("Post error:", error);
+            socket.send(JSON.stringify({
+              cmd: "post",
+              status: "error",
+              message: "Failed to save post",
+            }));
+          }
+          break;
+          case "fetch":
+          console.log("Fetch attempt:", data);
+          const fetchClient = clients.get(socket);
+          console.log("Client state for fetch:", fetchClient);
+          if (!fetchClient?.authenticated) {
+            console.log("Unauthorized fetch attempt");
+            socket.send(JSON.stringify({
+              cmd: "fetch",
+              status: "error",
+              message: "unauthorized",
+            }));
+            return;
+          }
+          try {
+            const offset = data.offset || 0;
+            console.log(
+              "Fetching posts with offset:",
+              offset,
+            );
+            const posts = db.queryEntries(
+              "SELECT post, user, created_at, id, reply_to FROM rtposts ORDER BY created_at DESC LIMIT ? OFFSET ?",
+              [10, offset],
+            );
+            console.log("Fetched posts:", posts);
+            socket.send(JSON.stringify({
+              cmd: "fetch",
+              status: "success",
+              posts: posts,
+            }));
+          } catch (error) {
+            console.error("Fetch error:", error);
+            socket.send(JSON.stringify({
+              cmd: "fetch",
+              status: "error",
+              message: "Failed to fetch posts",
+            }));
+          }
+          break;
+      }
+    } catch (e) {
+      console.error("Message handling error:", e);
+      socket.send(JSON.stringify({
+        status: "error",
+        message: "Error processing message",
+      }));
+    }
+  });
+  return response;
+}});
 async function handleRegister(req) {
   const data = await req.json();
   try {
