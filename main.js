@@ -1,6 +1,6 @@
 import { DB } from "https://deno.land/x/sqlite/mod.ts";
 const db = new DB("mlinkTest.db");
-console.log("HTTP: port 8000 | WS: port 3000")
+console.log("HTTP: port 8000 | WS: port 3000");
 db.execute(`
   CREATE TABLE IF NOT EXISTS users (
     user TEXT PRIMARY KEY NOT NULL,
@@ -35,427 +35,479 @@ db.execute(`
 db.execute(`
   CREATE TABLE IF NOT EXISTS rtposts (
     _id TEXT PRIMARY KEY,
-    p TEXT NOT NULL,
-    u TEXT NOT NULL,
-    t TEXT NOT NULL,
+    p TEXT,
+    u TEXT,
+    e INTEGER NOT NULL,
     reply_to TEXT,
     author TEXT NOT NULL,
-    post_origin TEXT NOT NULL
+    post_origin TEXT NOT NULL,
+    isDeleted TEXT NOT NULL,
+    emojis TEXT NOT NULL,
+    pinned TEXT NOT NULL,
+    post_id TEXT NOT NULL,
+    attachments TEXT NOT NULL,
+    reactions TEXT NOT NULL,
+    type INTEGER NOT NULL
   )
 `);
-Deno.serve({port: 3000, handler: (req) => {
-  if (req.headers.get("upgrade") != "websocket") {
-    return new Response(null, { status: 501 });
-  }
-  const clients = new Map();
-  function broadcast(message) {
-    for (const [socket, client] of clients) {
-      if (client.authenticated) {
-        try {
-          socket.send(message);
-        } catch (error) {
-          console.error("Error broadcasting to client:", error);
+Deno.serve({
+  port: 3000,
+  handler: (req) => {
+    if (req.headers.get("upgrade") != "websocket") {
+      return new Response(null, { status: 501 });
+    }
+    const clients = new Map();
+    function broadcast(message) {
+      for (const [socket, client] of clients) {
+        if (client.authenticated) {
+          try {
+            socket.send(message);
+          } catch (error) {
+            console.error("Error broadcasting to client:", error);
+          }
         }
       }
     }
-  }
-  const { socket, response } = Deno.upgradeWebSocket(req);
-  socket.addEventListener("open", () => {
-    clients.set(socket, { socket, authenticated: false });
-    console.log("client connected");
-    console.log(clients);
-  });
-  socket.addEventListener("close", () => {
-    clients.delete(socket);
-    console.log("client disconnected");
-    console.log(clients);
-  });
-  socket.addEventListener("message", (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      switch (data.cmd) {
-        case "ping":
-          socket.send("pong");
-          break;
+    const { socket, response } = Deno.upgradeWebSocket(req);
+    socket.addEventListener("open", () => {
+      clients.set(socket, { socket, authenticated: false });
+      console.log("client connected");
+      console.log(clients);
+    });
+    socket.addEventListener("close", () => {
+      clients.delete(socket);
+      console.log("client disconnected");
+      console.log(clients);
+    });
+    socket.addEventListener("message", (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        switch (data.cmd) {
+          case "ping":
+            socket.send("pong");
+            break;
           case "login":
-          try {
-            if (typeof data !== "object" || data === null) {
-              console.error("Invalid data format received");
-              socket.send(JSON.stringify({
-                cmd: "login",
-                status: "error",
-                message: "Invalid data format",
-              }));
-              return;
-            }
-            if (!data.username || !data.password) {
-              console.error("Missing credentials:", {
-                username: data.username,
-                password: !!data.password,
-              });
-              socket.send(JSON.stringify({
-                cmd: "login",
-                status: "error",
-                message: "Username and password are required",
-              }));
-              return;
-            }
-            crypto.subtle.digest(
-              "SHA-256",
-              new TextEncoder().encode(data.password),
-            ).then((hash) => {
-              const hashedPassword = Array.from(new Uint8Array(hash))
-                .map((b) => b.toString(16).padStart(2, "0"))
-                .join("");
-
-              const query =
-                "SELECT * FROM users WHERE user = ? AND password = ?";
-              const params = [data.username, hashedPassword];
-              const user = db.queryEntries(query, params);
-              if (user && user.length > 0) {
-                const userData = user[0];
-                if (userData.banned) {
-                  console.error("Banned user attempted login:", data.username);
-                  socket.send(JSON.stringify({
-                    cmd: "login",
-                    status: "error",
-                    message: "This account has been banned",
-                  }));
-                  return;
-                }
-                if (userData.token) {
-                  clients.set(socket, {
-                    socket,
-                    authenticated: true,
-                    user: data.username,
-                  });
-                  socket.send(JSON.stringify({
-                    cmd: "login",
-                    status: "success",
-                    payload: json.stringify({token: userData.token})
-                  }));
-                  console.log("Login successful for user:", data.username);
-                } else {
-                  console.error("Missing token for user:", data.username);
-                  socket.send(JSON.stringify({
-                    cmd: "login",
-                    status: "error",
-                    message: "Invalid user data - missing token",
-                  }));
-                }
-              } else {
-                console.error("No user found for credentials");
+            try {
+              if (typeof data !== "object" || data === null) {
+                console.error("Invalid data format received");
                 socket.send(JSON.stringify({
                   cmd: "login",
                   status: "error",
-                  message: "Invalid username or password",
-                }));
-              }
-            }).catch((error) => {
-              console.error("Hashing error:", error);
-              socket.send(JSON.stringify({
-                cmd: "login",
-                status: "error",
-                message: "Error processing login",
-              }));
-            });
-          } catch (dbError) {
-            console.error("Login error:", dbError);
-            socket.send(JSON.stringify({
-              cmd: "login",
-              status: "error",
-              message: "Database error during login",
-            }));
-          }
-          break;
-        case "post_home":
-          console.log("Post attempt:", data);
-          const postClient = clients.get(socket);
-          console.log("Client state:", postClient);
-          if (!postClient?.authenticated) {
-            console.log("Unauthorized post attempt");
-            socket.send(JSON.stringify({
-              cmd: "post_home", 
-              status: "error",
-              message: "unauthorized",
-            }));
-            return;
-          }
-          if (!data.p || typeof data.p !== "string") {
-            console.log("Invalid post data:", data);
-            socket.send(JSON.stringify({
-              cmd: "post",
-              status: "error", 
-              message: "invalid post data",
-            }));
-            return;
-          }
-          try {
-            let replyToId = null;
-            if (data.reply_to) {
-              const replyPost = db.queryEntries(
-                "SELECT _id FROM rtposts WHERE _id = ?",
-                [data.reply_to],
-              );
-              if (replyPost && replyPost.length > 0) {
-                replyToId = data.reply_to;
-              } else {
-                socket.send(JSON.stringify({
-                  cmd: "post",
-                  status: "error",
-                  message: "Invalid reply_to post ID",
+                  message: "Invalid data format",
                 }));
                 return;
               }
-            }
-            const timestamp = Date.now();
-            const id = crypto.randomUUID();
-            const stmt = db.prepareQuery(
-              `INSERT INTO rtposts _id, p, u, e, reply_to, author, post_origin, isDeleted, emojis, pinned, post_id, attachments, reactions, type VALUES ${id}, ${data.p}, ${postClient.u}, {"t": "${timestamp}"}, ${replyToId}, ${json.stringify({_id: postClient.user, pfp_data: "24", avatar: "null", avatar_color: "000000", flags: "0", uuid: "00000000-0000-0000-0000-000000000000"})}, "home", "false", "[]", "false", ${id}, "[]", "[]", "1"`,
-            );
-            stmt.finalize();
-            const postNotification = JSON.stringify({
-              cmd: "global",
-              post: {
-                _id: id,
-                p: data.p,
-                u: postClient.user,
-                e: JSON.stringify({"t": timestamp}),
-                reply_to: replyToId,
-                post_origin: "home",
-                author: json.stringify({_id: postClient.user, pfp_data: "24", avatar: "null", avatar_color: "000000", flags: "0", uuid: "00000000-0000-0000-0000-000000000000"}),
-                isDeleted: "false",
-                emojis: [],
-                pinned: false,
-                post_id: id,
-                attachments: [],
-                reactions: [],
-                type: "1"
-              }
-            });
-            for (const [clientSocket, clientData] of clients) {
-              if (clientData.authenticated) {
-                clientSocket.send(postNotification);
-              }
-            }
-            socket.send(JSON.stringify({
-              _id: id,
-                p: data.p,
-                u: postClient.user,
-                e: JSON.stringify({"t": timestamp}),
-                reply_to: replyToId,
-                post_origin: "home",
-                author: json.stringify({_id: postClient.user, pfp_data: "24", avatar: "null", avatar_color: "000000", flags: "0", uuid: "00000000-0000-0000-0000-000000000000"}),
-                isDeleted: "false",
-                emojis: [],
-                pinned: false,
-                post_id: id,
-                attachments: [],
-                reactions: [],
-                type: "1"
-            }));
-            console.log("Post successful:", {
-              id: id,
-              user: postClient.user,
-              post: data.post,
-              timestamp: timestamp,
-              reply_to: replyToId,
-            });
-          } catch (error) {
-            console.error("Post error:", error);
-            socket.send(JSON.stringify({
-              cmd: "post",
-              status: "error",
-              message: "Failed to save post",
-            }));
-          }
-          break;
-          case "login":
-          try {
-            if (typeof data !== "object" || data === null) {
-              console.error("Invalid data format received");
-              socket.send(JSON.stringify({
-                cmd: "login",
-                status: "error",
-                message: "Invalid data format",
-              }));
-              return;
-            }
-            if (!data.username || !data.password) {
-              console.error("Missing credentials:", {
-                username: data.username,
-                password: !!data.password,
-              });
-              socket.send(JSON.stringify({
-                cmd: "login",
-                status: "error",
-                message: "Username and password are required",
-              }));
-              return;
-            }
-            crypto.subtle.digest(
-              "SHA-256",
-              new TextEncoder().encode(data.password),
-            ).then((hash) => {
-              const hashedPassword = Array.from(new Uint8Array(hash))
-                .map((b) => b.toString(16).padStart(2, "0"))
-                .join("");
-
-              const query =
-                "SELECT * FROM users WHERE user = ? AND password = ?";
-              const params = [data.username, hashedPassword];
-              const user = db.queryEntries(query, params);
-              if (user && user.length > 0) {
-                const userData = user[0];
-                if (userData.banned) {
-                  console.error("Banned user attempted login:", data.username);
-                  socket.send(JSON.stringify({
-                    cmd: "login",
-                    status: "error",
-                    message: "This account has been banned",
-                  }));
-                  return;
-                }
-                if (userData.token) {
-                  clients.set(socket, {
-                    socket,
-                    authenticated: true,
-                    user: data.username,
-                  });
-                  socket.send(JSON.stringify({
-                    cmd: "login",
-                    status: "success",
-                    token: userData.token,
-                  }));
-                  console.log("Login successful for user:", data.username);
-                } else {
-                  console.error("Missing token for user:", data.username);
-                  socket.send(JSON.stringify({
-                    cmd: "login",
-                    status: "error",
-                    message: "Invalid user data - missing token",
-                  }));
-                }
-              } else {
-                console.error("No user found for credentials");
+              if (!data.username || !data.password) {
+                console.error("Missing credentials:", {
+                  username: data.username,
+                  password: !!data.password,
+                });
                 socket.send(JSON.stringify({
                   cmd: "login",
                   status: "error",
-                  message: "Invalid username or password",
+                  message: "Username and password are required",
                 }));
+                return;
               }
-            }).catch((error) => {
-              console.error("Hashing error:", error);
+              crypto.subtle.digest(
+                "SHA-256",
+                new TextEncoder().encode(data.password),
+              ).then((hash) => {
+                const hashedPassword = Array.from(new Uint8Array(hash))
+                  .map((b) => b.toString(16).padStart(2, "0"))
+                  .join("");
+
+                const query =
+                  "SELECT * FROM users WHERE user = ? AND password = ?";
+                const params = [data.username, hashedPassword];
+                const user = db.queryEntries(query, params);
+                if (user && user.length > 0) {
+                  const userData = user[0];
+                  if (userData.banned) {
+                    console.error(
+                      "Banned user attempted login:",
+                      data.username,
+                    );
+                    socket.send(JSON.stringify({
+                      cmd: "login",
+                      status: "error",
+                      message: "This account has been banned",
+                    }));
+                    return;
+                  }
+                  if (userData.token) {
+                    clients.set(socket, {
+                      socket,
+                      authenticated: true,
+                      user: data.username,
+                    });
+                    socket.send(JSON.stringify({
+                      cmd: "login",
+                      status: "success",
+                      payload: JSON.stringify({ token: userData.token }),
+                    }));
+                    console.log("Login successful for user:", data.username);
+                  } else {
+                    console.error("Missing token for user:", data.username);
+                    socket.send(JSON.stringify({
+                      cmd: "login",
+                      status: "error",
+                      message: "Invalid user data - missing token",
+                    }));
+                  }
+                } else {
+                  console.error("No user found for credentials");
+                  socket.send(JSON.stringify({
+                    cmd: "login",
+                    status: "error",
+                    message: "Invalid username or password",
+                  }));
+                }
+              }).catch((error) => {
+                console.error("Hashing error:", error);
+                socket.send(JSON.stringify({
+                  cmd: "login",
+                  status: "error",
+                  message: "Error processing login",
+                }));
+              });
+            } catch (dbError) {
+              console.error("Login error:", dbError);
               socket.send(JSON.stringify({
                 cmd: "login",
                 status: "error",
-                message: "Error processing login",
+                message: "Database error during login",
               }));
-            });
-          } catch (dbError) {
-            console.error("Login error:", dbError);
-            socket.send(JSON.stringify({
-              cmd: "login",
-              status: "error",
-              message: "Database error during login",
-            }));
-          }
-          break;
-          case "register":
-          const token = crypto.randomUUID();
-          try {
-            const hashedPassword = crypto.subtle.digest(
-              "SHA-256",
-              new TextEncoder().encode(data.password),
-            )
-              .then((hash) =>
-                Array.from(new Uint8Array(hash))
-                  .map((b) => b.toString(16).padStart(2, "0"))
-                  .join("")
-              )
-              .then((hashedPassword) => {
-                const stmt = db.prepareQuery(
-                  "INSERT INTO users (user, token, permissions, password) VALUES (?, ?, ?, ?)",
+            }
+            break;
+          case "post":
+            console.log("Post attempt:", data);
+            const postClient = clients.get(socket);
+            console.log("Client state:", postClient);
+            if (!postClient?.authenticated) {
+              console.log("Unauthorized post attempt");
+              socket.send(JSON.stringify({
+                cmd: "post_home",
+                status: "error",
+                message: "unauthorized",
+              }));
+              return;
+            }
+            if (!data.p || typeof data.p !== "string") {
+              console.log("Invalid post data:", data);
+              socket.send(JSON.stringify({
+                cmd: "post",
+                status: "error",
+                message: "invalid post data",
+              }));
+              return;
+            }
+            try {
+              let replyToId = null;
+              if (data.reply_to) {
+                const replyPost = db.queryEntries(
+                  "SELECT _id FROM rtposts WHERE _id = ?",
+                  [data.reply_to],
                 );
-                const result = stmt.execute([
-                  data.user,
-                  token,
-                  "user",
-                  hashedPassword,
-                ]);
-                stmt.finalize();
-                return result;
-              })
-              .then((result) => {
+                if (replyPost && replyPost.length > 0) {
+                  replyToId = data.reply_to;
+                } else {
+                  socket.send(JSON.stringify({
+                    cmd: "post",
+                    status: "error",
+                    message: "Invalid reply_to post ID",
+                  }));
+                  return;
+                }
+              }
+              const timestamp = Date.now();
+              const id = crypto.randomUUID();
+              const stmt = db.prepareQuery(
+                "INSERT INTO rtposts (_id, p, u, e, reply_to, author, post_origin, isDeleted, emojis, pinned, post_id, attachments, reactions, type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              );
+              stmt.execute([
+                id,
+                data.p,
+                postClient.user,
+                JSON.stringify({ t: timestamp }),
+                replyToId,
+                JSON.stringify({
+                  _id: postClient.user,
+                  pfp_data: "24",
+                  avatar: "null",
+                  avatar_color: "000000",
+                  flags: "0",
+                  uuid: "00000000-0000-0000-0000-000000000000",
+                }),
+                "home",
+                "false",
+                "[]",
+                "false",
+                id,
+                "[]",
+                "[]",
+                "1",
+              ]);
+              stmt.finalize();
+              const postNotification = JSON.stringify({
+                post: {
+                  _id: id,
+                  p: data.p,
+                  u: postClient.user,
+                  e: JSON.stringify({ "t": timestamp }),
+                  reply_to: replyToId,
+                  post_origin: "home",
+                  author: JSON.stringify({
+                    _id: postClient.user,
+                    pfp_data: "24",
+                    avatar: "null",
+                    avatar_color: "000000",
+                    flags: "0",
+                    uuid: "00000000-0000-0000-0000-000000000000",
+                  }),
+                  isDeleted: "false",
+                  emojis: [],
+                  pinned: false,
+                  post_id: id,
+                  attachments: [],
+                  reactions: [],
+                  type: "1",
+                },
+              });
+              for (const [clientSocket, clientData] of clients) {
+                if (clientData.authenticated) {
+                  clientSocket.send(postNotification);
+                }
+              }
+              socket.send(JSON.stringify({
+                _id: id,
+                p: data.p,
+                u: postClient.user,
+                e: JSON.stringify({ "t": timestamp }),
+                reply_to: replyToId,
+                post_origin: "home",
+                author: JSON.stringify({
+                  _id: postClient.user,
+                  pfp_data: "24",
+                  avatar: "null",
+                  avatar_color: "000000",
+                  flags: "0",
+                  uuid: "00000000-0000-0000-0000-000000000000",
+                }),
+                isDeleted: "false",
+                emojis: [],
+                pinned: false,
+                post_id: id,
+                attachments: [],
+                reactions: [],
+                type: "1",
+              }));
+              console.log("Post successful:", {
+                id: id,
+                user: postClient.user,
+                post: data.post,
+                timestamp: timestamp,
+                reply_to: replyToId,
+              });
+            } catch (error) {
+              console.error("Post error:", error);
+              socket.send(JSON.stringify({
+                cmd: "post",
+                status: "error",
+                message: "Failed to save post",
+              }));
+            }
+            break;
+          case "login":
+            try {
+              if (typeof data !== "object" || data === null) {
+                console.error("Invalid data format received");
                 socket.send(JSON.stringify({
-                  cmd: "register",
-                  status: "success",
-                  token: token,
+                  cmd: "login",
+                  status: "error",
+                  message: "Invalid data format",
+                }));
+                return;
+              }
+              if (!data.username || !data.password) {
+                console.error("Missing credentials:", {
+                  username: data.username,
+                  password: !!data.password,
+                });
+                socket.send(JSON.stringify({
+                  cmd: "login",
+                  status: "error",
+                  message: "Username and password are required",
+                }));
+                return;
+              }
+              crypto.subtle.digest(
+                "SHA-256",
+                new TextEncoder().encode(data.password),
+              ).then((hash) => {
+                const hashedPassword = Array.from(new Uint8Array(hash))
+                  .map((b) => b.toString(16).padStart(2, "0"))
+                  .join("");
+
+                const query =
+                  "SELECT * FROM users WHERE user = ? AND password = ?";
+                const params = [data.username, hashedPassword];
+                const user = db.queryEntries(query, params);
+                if (user && user.length > 0) {
+                  const userData = user[0];
+                  if (userData.banned) {
+                    console.error(
+                      "Banned user attempted login:",
+                      data.username,
+                    );
+                    socket.send(JSON.stringify({
+                      cmd: "login",
+                      status: "error",
+                      message: "This account has been banned",
+                    }));
+                    return;
+                  }
+                  if (userData.token) {
+                    clients.set(socket, {
+                      socket,
+                      authenticated: true,
+                      user: data.username,
+                    });
+                    socket.send(JSON.stringify({
+                      cmd: "login",
+                      status: "success",
+                      token: userData.token,
+                    }));
+                    console.log("Login successful for user:", data.username);
+                  } else {
+                    console.error("Missing token for user:", data.username);
+                    socket.send(JSON.stringify({
+                      cmd: "login",
+                      status: "error",
+                      message: "Invalid user data - missing token",
+                    }));
+                  }
+                } else {
+                  console.error("No user found for credentials");
+                  socket.send(JSON.stringify({
+                    cmd: "login",
+                    status: "error",
+                    message: "Invalid username or password",
+                  }));
+                }
+              }).catch((error) => {
+                console.error("Hashing error:", error);
+                socket.send(JSON.stringify({
+                  cmd: "login",
+                  status: "error",
+                  message: "Error processing login",
                 }));
               });
-          } catch (e) {
-            console.error("Registration error:", e);
-            try {
-              const existingUsers = db.queryEntries("SELECT * FROM users");
-              console.log("Existing users:", existingUsers);
-            } catch (queryError) {
-              console.error("Query error:", queryError);
+            } catch (dbError) {
+              console.error("Login error:", dbError);
+              socket.send(JSON.stringify({
+                cmd: "login",
+                status: "error",
+                message: "Database error during login",
+              }));
             }
-            socket.send(JSON.stringify({
-              cmd: "register",
-              status: "error",
-              message: `Registration failed: ${e.message}`,
-            }));
-          }
-          break;
+            break;
+          case "register":
+            const token = crypto.randomUUID();
+            try {
+              const hashedPassword = crypto.subtle.digest(
+                "SHA-256",
+                new TextEncoder().encode(data.password),
+              )
+                .then((hash) =>
+                  Array.from(new Uint8Array(hash))
+                    .map((b) => b.toString(16).padStart(2, "0"))
+                    .join("")
+                )
+                .then((hashedPassword) => {
+                  const stmt = db.prepareQuery(
+                    "INSERT INTO users (user, token, permissions, password) VALUES (?, ?, ?, ?)",
+                  );
+                  const result = stmt.execute([
+                    data.user,
+                    token,
+                    "user",
+                    hashedPassword,
+                  ]);
+                  stmt.finalize();
+                  return result;
+                })
+                .then((result) => {
+                  socket.send(JSON.stringify({
+                    cmd: "register",
+                    status: "success",
+                    token: token,
+                  }));
+                });
+            } catch (e) {
+              console.error("Registration error:", e);
+              try {
+                const existingUsers = db.queryEntries("SELECT * FROM users");
+                console.log("Existing users:", existingUsers);
+              } catch (queryError) {
+                console.error("Query error:", queryError);
+              }
+              socket.send(JSON.stringify({
+                cmd: "register",
+                status: "error",
+                message: `Registration failed: ${e.message}`,
+              }));
+            }
+            break;
           case "fetch":
-          console.log("Fetch attempt:", data);
-          const fetchClient = clients.get(socket);
-          console.log("Client state for fetch:", fetchClient);
-          if (!fetchClient?.authenticated) {
-            console.log("Unauthorized fetch attempt");
-            socket.send(JSON.stringify({
-              cmd: "fetch",
-              status: "error",
-              message: "unauthorized",
-            }));
-            return;
-          }
-          try {
-            const offset = data.offset || 0;
-            console.log(
-              "Fetching posts with offset:",
-              offset,
-            );
-            const posts = db.queryEntries(
-              `SELECT _id, p, u, e, reply_to, author, post_origin, isDeleted, emojis, pinned, post_id, attachments, reactions, type FROM rtposts ORDER BY t.e DESC LIMIT 10 OFFSET 0`,
-            );
-            console.log("Fetched posts:", posts);
-            socket.send(JSON.stringify({
-              cmd: "fetch",
-              status: "success",
-              posts: posts,
-            }));
-          } catch (error) {
-            console.error("Fetch error:", error);
-            socket.send(JSON.stringify({
-              cmd: "fetch",
-              status: "error",
-              message: "Failed to fetch posts",
-            }));
-          }
-          break;
+            console.log("Fetch attempt:", data);
+            const fetchClient = clients.get(socket);
+            console.log("Client state for fetch:", fetchClient);
+            if (!fetchClient?.authenticated) {
+              console.log("Unauthorized fetch attempt");
+              socket.send(JSON.stringify({
+                cmd: "fetch",
+                status: "error",
+                message: "unauthorized",
+              }));
+              return;
+            }
+            try {
+              const offset = data.offset || 0;
+              console.log(
+                "Fetching posts with offset:",
+                offset,
+              );
+              const posts = db.queryEntries(
+                `SELECT _id, p, u, e, reply_to, author, post_origin, isDeleted, emojis, pinned, post_id, attachments, reactions, type FROM rtposts DESC LIMIT 10 OFFSET 0`,
+              );
+              console.log("Fetched posts:", posts);
+              socket.send(JSON.stringify({
+                cmd: "fetch",
+                status: "success",
+                posts: posts,
+              }));
+            } catch (error) {
+              console.error("Fetch error:", error);
+              socket.send(JSON.stringify({
+                cmd: "fetch",
+                status: "error",
+                message: "Failed to fetch posts",
+              }));
+            }
+            break;
+        }
+      } catch (e) {
+        console.error("Message handling error:", e);
+        socket.send(JSON.stringify({
+          status: "error",
+          message: "Error processing message",
+        }));
       }
-    } catch (e) {
-      console.error("Message handling error:", e);
-      socket.send(JSON.stringify({
-        status: "error",
-        message: "Error processing message",
-      }));
-    }
-  });
-  return response;
-}});
+    });
+    return response;
+  },
+});
 async function handleRegister(req) {
   const data = await req.json();
   try {
@@ -624,6 +676,37 @@ async function handleLogin(req) {
     );
   }
 }
+async function checkUserAccess(auth, target_user = null) {
+  if (!auth) return null;
+  
+  const user = db.queryEntries(
+    "SELECT * FROM users WHERE token = ?",
+    [auth],
+  )[0];
+  
+  if (!user) return null;
+  
+  // Check if user is banned
+  const banned = db.queryEntries(
+    "SELECT * FROM bans WHERE user = ?",
+    [user.user]
+  )[0];
+  
+  if (banned) return null;
+  
+  // If checking access to specific user content, verify not blocked
+  if (target_user) {
+    const blocked = db.queryEntries(
+      "SELECT * FROM blocked_users WHERE blocker = ? AND blocked = ?",
+      [target_user, user.user]
+    )[0];
+    
+    if (blocked) return null;
+  }
+  
+  return user;
+}
+
 async function handlePost(req) {
   const auth = req.headers.get("Authorization");
   if (!auth) {
@@ -879,6 +962,292 @@ async function handleFollows(req) {
     );
   }
 }
+async function handleBlock(req) {
+  const auth = req.headers.get("Authorization");
+  const user = await checkUserAccess(auth);
+  
+  if (!user) {
+    return new Response(
+      JSON.stringify({
+        status: "error",
+        message: "Unauthorized",
+      }),
+      {
+        status: 401,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        },
+      },
+    );
+  }
+
+  if (req.method === "POST") {
+    const data = await req.json();
+    if (!data.user) {
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: "User to block is required",
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    }
+
+    try {
+      db.execute(
+        "INSERT INTO blocked_users (blocker, blocked, created_at) VALUES (?, ?, ?)",
+        [user.user, data.user, Date.now()]
+      );
+
+      return new Response(
+        JSON.stringify({
+          status: "success",
+          message: "User blocked successfully",
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    } catch (e) {
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: "Failed to block user",
+        }),
+        {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    }
+  } else if (req.method === "DELETE") {
+    const url = new URL(req.url);
+    const blocked_user = url.searchParams.get("user");
+    
+    if (!blocked_user) {
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: "User parameter is required",
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    }
+
+    try {
+      db.execute(
+        "DELETE FROM blocked_users WHERE blocker = ? AND blocked = ?",
+        [user.user, blocked_user]
+      );
+
+      return new Response(
+        JSON.stringify({
+          status: "success",
+          message: "User unblocked successfully",
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    } catch (e) {
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: "Failed to unblock user",
+        }),
+        {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    }
+  }
+}
+
+async function handleBan(req) {
+  const auth = req.headers.get("Authorization");
+  const user = await checkUserAccess(auth);
+  
+  if (!user || !user.is_admin) {
+    return new Response(
+      JSON.stringify({
+        status: "error",
+        message: "Unauthorized - Admin access required",
+      }),
+      {
+        status: 401,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        },
+      },
+    );
+  }
+
+  if (req.method === "POST") {
+    const data = await req.json();
+    if (!data.user) {
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: "User to ban is required",
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    }
+
+    try {
+      db.execute(
+        "INSERT INTO bans (user, banned_by, reason, created_at) VALUES (?, ?, ?, ?)",
+        [data.user, user.user, data.reason || null, Date.now()]
+      );
+
+      return new Response(
+        JSON.stringify({
+          status: "success",
+          message: "User banned successfully",
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    } catch (e) {
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: "Failed to ban user",
+        }),
+        {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    }
+  } else if (req.method === "DELETE") {
+    const url = new URL(req.url);
+    const banned_user = url.searchParams.get("user");
+    
+    if (!banned_user) {
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: "User parameter is required",
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    }
+
+    try {
+      db.execute(
+        "DELETE FROM bans WHERE user = ?",
+        [banned_user]
+      );
+
+      return new Response(
+        JSON.stringify({
+          status: "success",
+          message: "User unbanned successfully",
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    } catch (e) {
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: "Failed to unban user",
+        }),
+        {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    }
+  }
+}
+
 async function handleUserPosts(req) {
   const auth = req.headers.get("Authorization");
   if (!auth) {
@@ -960,99 +1329,42 @@ async function handleUserPosts(req) {
     );
   }
 }
-Deno.serve((req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      },
-    });
-  }
-  const url = new URL(req.url);
-  const path = url.pathname;
-  switch (path) {
-    case "/register":
-      if (req.method !== "POST") {
-        return new Response(null, {
-          status: 405,
-          headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        });
-      }
-      return handleRegister(req);
-    case "/login":
-      if (req.method !== "POST") {
-        return new Response(null, {
-          status: 405,
-          headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        });
-      }
-      return handleLogin(req);
-    case "/post":
-      if (req.method !== "POST") {
-        return new Response(null, {
-          status: 405,
-          headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        });
-      }
-      return handlePost(req);
-    case "/posts":
-      if (req.method !== "GET") {
-        return new Response(null, {
-          status: 405,
-          headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        });
-      }
-      return handleFetch(req);
-    case "/follows":
-      if (req.method !== "GET") {
-        return new Response(null, {
-          status: 405,
-          headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        });
-      }
-      return handleFollows(req);
-    case "/userposts":
-      if (req.method !== "GET") {
-        return new Response(null, {
-          status: 405,
-          headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        });
-      }
-      return handleUserPosts(req);
-    default:
+async function updateHandlerAuth(handler) {
+  return async (req) => {
+    // Pre-flight OPTIONS request
+    if (req.method === "OPTIONS") {
       return new Response(null, {
-        status: 404,
+        status: 204,
         headers: {
-          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Origin": "*", 
           "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type, Authorization",
         },
       });
+    }
+    return await handler(req);
+  };
+}
+
+const routes = {
+  "/post": updateHandlerAuth(handlePost),
+  "/posts": updateHandlerAuth(handleFetch), 
+  "/user/posts": updateHandlerAuth(handleUserPosts),
+  "/register": updateHandlerAuth(handleRegister),
+  "/login": updateHandlerAuth(handleLogin),
+  "/follows": updateHandlerAuth(handleFollows),
+  "/block": updateHandlerAuth(handleBlock),
+  "/ban": updateHandlerAuth(handleBan),
+};
+
+Deno.serve((req) => {
+  const url = new URL(req.url);
+  const path = url.pathname;
+  
+  const handler = routes[path];
+  if (handler) {
+    return handler(req);
   }
+
+  return new Response("Not Found", { status: 404 });
 });
