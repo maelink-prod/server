@@ -2,4 +2,5 @@
 # maelink server
 This is the backend server for maelink.
 > [!Warning]
-> This is the (currently WIP) HTTP rewrite! Please don't use this branch until it is merged with `main`!
+> Some versions may be unstable!
+> To check if a version may not work or be unstable, check the Releases tab.
