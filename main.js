@@ -1329,42 +1329,40 @@ async function handleUserPosts(req) {
     );
   }
 }
-async function updateHandlerAuth(handler) {
-  return async (req) => {
-    // Pre-flight OPTIONS request
-    if (req.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          "Access-Control-Allow-Origin": "*", 
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      });
-    }
-    return await handler(req);
-  };
-}
-
-const routes = {
-  "/post": updateHandlerAuth(handlePost),
-  "/posts": updateHandlerAuth(handleFetch), 
-  "/user/posts": updateHandlerAuth(handleUserPosts),
-  "/register": updateHandlerAuth(handleRegister),
-  "/login": updateHandlerAuth(handleLogin),
-  "/follows": updateHandlerAuth(handleFollows),
-  "/block": updateHandlerAuth(handleBlock),
-  "/ban": updateHandlerAuth(handleBan),
-};
-
-Deno.serve((req) => {
+Deno.serve(async (req) => {
   const url = new URL(req.url);
   const path = url.pathname;
-  
-  const handler = routes[path];
-  if (handler) {
-    return handler(req);
+
+  // Pre-flight OPTIONS request
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS", 
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      },
+    });
   }
 
-  return new Response("Not Found", { status: 404 });
+  switch (path) {
+    case "/post":
+      return await handlePost(req);
+    case "/posts":
+      return await handleFetch(req);
+    case "/userposts":
+      return await handleUserPosts(req);
+    case "/register":
+      return await handleRegister(req);
+    case "/login":
+      return await handleLogin(req);
+    case "/follows":
+      return await handleFollows(req);
+    case "/block":
+      return await handleBlock(req);
+    case "/ban":
+      return await handleBan(req);
+    default:
+      return new Response("Not Found", { status: 404 });
+  }
 });
