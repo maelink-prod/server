@@ -8,6 +8,4 @@ This is the backend server for maelink.
 Join maelink's Discord server if you haven't already at https://discord.gg/qExK36qx
 
 > [!Warning]
-> This is potentially unstable and outdated!
->
-> A HTTP rewrite of this server is in the works.
+> This is very outdated! Please never use this version of the server!
