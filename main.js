@@ -51,7 +51,7 @@ db.execute(`
   )
 `);
 Deno.serve({
-  port: 3000,
+  port: 3783,
   handler: (req) => {
     if (req.headers.get("upgrade") != "websocket") {
       return new Response(null, { status: 501 });
@@ -1329,7 +1329,7 @@ async function handleUserPosts(req) {
     );
   }
 }
-Deno.serve(async (req) => {
+Deno.serve({port: 2387}, async (req) => {
   const url = new URL(req.url);
   const path = url.pathname;
 
