@@ -1,6 +1,6 @@
 import { DB } from "https://deno.land/x/sqlite/mod.ts";
 const db = new DB("mlinkTest.db");
-console.log("HTTP: port 8000 | WS: port 3000");
+console.log("HTTP: port 2387 | WS: port 3783");
 db.execute(`
   CREATE TABLE IF NOT EXISTS users (
     user TEXT PRIMARY KEY NOT NULL,
