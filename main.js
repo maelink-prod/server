@@ -1,17 +1,52 @@
-import { DB } from "https://deno.land/x/sqlite/mod.ts";
-const db = new DB("mlinkTest.db");
-console.log("HTTP: port 2387 | WS: port 3783");
+// deno-lint-ignore-file
+console.log(`Dependencies: Chalk (npm:chalk), Octokit REST (npm:@octokit/rest)
+Install with "deno install <package_name>"`)
+import { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
+import { Octokit } from 'npm:@octokit/rest';
+import chalk from "npm:chalk";
+const db = new DB("main.db");
+const octokit = new Octokit();
+async function commit(owner, repo, path, branch = 'main') {
+  try {
+    const { data } = await octokit.repos.listCommits({
+      owner,
+      repo,
+      path,
+      per_page: 1,
+      sha: branch
+    });
+    const commitSha = data[0].sha.substring(0, 7);
+    return commitSha;
+  } catch (error) {
+    console.error('Error fetching commit:', error);
+    throw error;
+  }
+}
+console.log(chalk.green.bold(`maelink server BETA (${await commit('delusionsGH', 'maelink', 'main.js')})`));
+console.log(chalk.redBright.bold(`
+DISCLAIMER: This server is a public beta, it may be unstable or crash!
+I will fix as much as I can but you are on your own if I can't reproduce an error.`));
+console.log(chalk.blueBright.bold(`
+HTTP: port 2387 | WS: port 3783`));
+async function autoPromote() {
+  try {
+    db.execute("UPDATE users SET is_mod = 1 WHERE user = 'delusions'");
+  } catch (e) {
+  }
+}
+autoPromote();
 db.execute(`
   CREATE TABLE IF NOT EXISTS users (
     user TEXT PRIMARY KEY NOT NULL,
     token TEXT NOT NULL UNIQUE,
     permissions TEXT NOT NULL,
-    password TEXT NOT NULL
+    password TEXT NOT NULL,
+    is_mod INTEGER NOT NULL
   );
 `);
 db.execute(`
   CREATE TABLE IF NOT EXISTS follows (
-    followed TEXT PRIMARY KEY,
+    following TEXT PRIMARY KEY,
     follower TEXT NOT NULL
   )
 `);
@@ -57,17 +92,6 @@ Deno.serve({
       return new Response(null, { status: 501 });
     }
     const clients = new Map();
-    function broadcast(message) {
-      for (const [socket, client] of clients) {
-        if (client.authenticated) {
-          try {
-            socket.send(message);
-          } catch (error) {
-            console.error("Error broadcasting to client:", error);
-          }
-        }
-      }
-    }
     const { socket, response } = Deno.upgradeWebSocket(req);
     socket.addEventListener("open", () => {
       clients.set(socket, { socket, authenticated: false });
@@ -359,12 +383,14 @@ Deno.serve({
                     console.error(
                       "Banned user attempted login:",
                       data.username,
+                      "Reason:", userData.ban_reason || "No reason provided", 
+                      "Banned at:", userData.ban_created_at || "Unknown date"
                     );
                     socket.send(JSON.stringify({
-                      cmd: "login",
+                      cmd: "login", 
                       status: "error",
-                      message: "This account has been banned",
-                    }));
+                      message: {"message": "ban", "reason": `${userData.ban_reason || "No reason provided"}`, "bannedDate": `${userData.ban_created_at || "Unknown date"}`
+                      }}));
                     return;
                   }
                   if (userData.token) {
@@ -538,9 +564,9 @@ async function handleRegister(req) {
       ),
     ).map((b) => b.toString(16).padStart(2, "0")).join("");
     const stmt = db.prepareQuery(
-      "INSERT INTO users (user, token, permissions, password) VALUES (?, ?, ?, ?)",
+      "INSERT INTO users (user, token, permissions, password, is_mod) VALUES (?, ?, ?, ?, ?)",
     );
-    stmt.execute([data.user, token, "user", hashedPassword]);
+    stmt.execute([data.user, token, "user", hashedPassword, 0]);
     stmt.finalize();
     return new Response(
       JSON.stringify({
@@ -557,6 +583,7 @@ async function handleRegister(req) {
         },
       },
     );
+    autoPromote()
   } catch (e) {
     console.error("Registration error:", e);
     return new Response(
@@ -610,7 +637,8 @@ async function handleLogin(req) {
     );
     if (user && user.length > 0) {
       const userData = user[0];
-      if (userData.banned) {
+      const userAccess = await checkUserAccess(userData.token);
+      if (!userAccess) {
         return new Response(
           JSON.stringify({
             status: "error",
@@ -678,35 +706,25 @@ async function handleLogin(req) {
 }
 async function checkUserAccess(auth, target_user = null) {
   if (!auth) return null;
-  
   const user = db.queryEntries(
     "SELECT * FROM users WHERE token = ?",
     [auth],
   )[0];
-  
   if (!user) return null;
-  
-  // Check if user is banned
   const banned = db.queryEntries(
     "SELECT * FROM bans WHERE user = ?",
-    [user.user]
+    [user.user],
   )[0];
-  
   if (banned) return null;
-  
-  // If checking access to specific user content, verify not blocked
   if (target_user) {
     const blocked = db.queryEntries(
       "SELECT * FROM blocked_users WHERE blocker = ? AND blocked = ?",
-      [target_user, user.user]
+      [target_user, user.user],
     )[0];
-    
     if (blocked) return null;
   }
-  
   return user;
 }
-
 async function handlePost(req) {
   const auth = req.headers.get("Authorization");
   if (!auth) {
@@ -965,7 +983,6 @@ async function handleFollows(req) {
 async function handleBlock(req) {
   const auth = req.headers.get("Authorization");
   const user = await checkUserAccess(auth);
-  
   if (!user) {
     return new Response(
       JSON.stringify({
@@ -983,7 +1000,6 @@ async function handleBlock(req) {
       },
     );
   }
-
   if (req.method === "POST") {
     const data = await req.json();
     if (!data.user) {
@@ -1003,13 +1019,11 @@ async function handleBlock(req) {
         },
       );
     }
-
     try {
       db.execute(
         "INSERT INTO blocked_users (blocker, blocked, created_at) VALUES (?, ?, ?)",
-        [user.user, data.user, Date.now()]
+        [user.user, data.user, Date.now()],
       );
-
       return new Response(
         JSON.stringify({
           status: "success",
@@ -1045,7 +1059,6 @@ async function handleBlock(req) {
   } else if (req.method === "DELETE") {
     const url = new URL(req.url);
     const blocked_user = url.searchParams.get("user");
-    
     if (!blocked_user) {
       return new Response(
         JSON.stringify({
@@ -1063,13 +1076,11 @@ async function handleBlock(req) {
         },
       );
     }
-
     try {
       db.execute(
         "DELETE FROM blocked_users WHERE blocker = ? AND blocked = ?",
-        [user.user, blocked_user]
+        [user.user, blocked_user],
       );
-
       return new Response(
         JSON.stringify({
           status: "success",
@@ -1104,12 +1115,10 @@ async function handleBlock(req) {
     }
   }
 }
-
 async function handleBan(req) {
   const auth = req.headers.get("Authorization");
   const user = await checkUserAccess(auth);
-  
-  if (!user || !user.is_admin) {
+  if (!user || !user.is_mod) {
     return new Response(
       JSON.stringify({
         status: "error",
@@ -1126,7 +1135,6 @@ async function handleBan(req) {
       },
     );
   }
-
   if (req.method === "POST") {
     const data = await req.json();
     if (!data.user) {
@@ -1146,13 +1154,11 @@ async function handleBan(req) {
         },
       );
     }
-
     try {
       db.execute(
         "INSERT INTO bans (user, banned_by, reason, created_at) VALUES (?, ?, ?, ?)",
-        [data.user, user.user, data.reason || null, Date.now()]
+        [data.user, user.user, data.reason || null, Date.now()],
       );
-
       return new Response(
         JSON.stringify({
           status: "success",
@@ -1188,7 +1194,7 @@ async function handleBan(req) {
   } else if (req.method === "DELETE") {
     const url = new URL(req.url);
     const banned_user = url.searchParams.get("user");
-    
+
     if (!banned_user) {
       return new Response(
         JSON.stringify({
@@ -1206,13 +1212,11 @@ async function handleBan(req) {
         },
       );
     }
-
     try {
       db.execute(
         "DELETE FROM bans WHERE user = ?",
-        [banned_user]
+        [banned_user],
       );
-
       return new Response(
         JSON.stringify({
           status: "success",
@@ -1247,7 +1251,6 @@ async function handleBan(req) {
     }
   }
 }
-
 async function handleUserPosts(req) {
   const auth = req.headers.get("Authorization");
   if (!auth) {
@@ -1329,22 +1332,368 @@ async function handleUserPosts(req) {
     );
   }
 }
-Deno.serve({port: 2387}, async (req) => {
+async function handleFollow(req) {
+  const auth = req.headers.get("Authorization");
+  const user = await checkUserAccess(auth);
+  if (!user) {
+    return new Response(
+      JSON.stringify({
+        status: "error",
+        message: "Unauthorized",
+      }),
+      {
+        status: 401,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        },
+      },
+    );
+  }
+  if (req.method === "POST") {
+    const data = await req.json();
+    if (!data.user) {
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: "User to follow is required",
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    }
+    try {
+      db.execute(
+        "INSERT INTO follows (follower, following, created_at) VALUES (?, ?, ?)",
+        [user.user, data.user, Date.now()],
+      );
+      return new Response(
+        JSON.stringify({
+          status: "success",
+          message: "User followed successfully",
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    } catch (e) {
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: "Failed to follow user",
+        }),
+        {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    }
+  }
+}
+async function handleSearch(req) {
+  const auth = req.headers.get("Authorization");
+  const user = await checkUserAccess(auth);
+  if (!user) {
+    return new Response(
+      JSON.stringify({
+        status: "error",
+        message: "Unauthorized",
+      }),
+      {
+        status: 401,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        },
+      },
+    );
+  }
+  const url = new URL(req.url);
+  const query = url.searchParams.get("q");
+  if (!query) {
+    return new Response(
+      JSON.stringify({
+        status: "error",
+        message: "Search query is required",
+      }),
+      {
+        status: 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        },
+      },
+    );
+  }
+  try {
+    const posts = db.queryEntries(
+      "SELECT post, user, created_at, id, reply_to FROM posts WHERE post LIKE ? OR user LIKE ? ORDER BY created_at DESC LIMIT 20",
+      [`%${query}%`, `%${query}%`],
+    );
+    return new Response(
+      JSON.stringify({
+        status: "success",
+        posts: posts,
+      }),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        },
+      },
+    );
+  } catch (e) {
+    return new Response(
+      JSON.stringify({
+        status: "error",
+        message: "Failed to search posts",
+      }),
+      {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        },
+      },
+    );
+  }
+}
+async function handlePromote(req) {
+  const auth = req.headers.get("Authorization");
+  const user = await checkUserAccess(auth);
+  if (!user || !user.is_mod) {
+    return new Response(
+      JSON.stringify({ status: "error", message: "Unauthorized" }),
+      {
+        status: 401,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        },
+      },
+    );
+  }
+  if (req.method === "POST") {
+    const data = await req.json();
+    if (!data.user) {
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: "User to promote is required",
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    }
+    try {
+      db.execute("UPDATE users SET is_mod = 1 WHERE user = ?", [data.user]);
+      return new Response(
+        JSON.stringify({
+          status: "success",
+          message: "User promoted successfully",
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    } catch (e) {
+      return new Response(
+        JSON.stringify({ status: "error", message: "Failed to promote user" }),
+        {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    }
+  }
+}
+async function handleComment(req) {
+  const auth = req.headers.get("Authorization");
+  const user = await checkUserAccess(auth);
+  if (!user) {
+    return new Response(
+      JSON.stringify({ status: "error", message: "Unauthorized" }),
+      {
+        status: 401,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        },
+      },
+    );
+  }
+  if (req.method === "POST") {
+    const data = await req.json();
+    if (!data.comment) {
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: "Comment text is required",
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    }
+    try {
+      const commentId = crypto.randomUUID();
+      db.execute(
+        "INSERT INTO comments (id, post_id, user, comment, created_at) VALUES (?, ?, ?, ?, ?)",
+        [commentId, data.post_id, user.user, data.comment, Date.now()],
+      );
+      return new Response(
+        JSON.stringify({
+          status: "success",
+          message: "Comment added successfully",
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    } catch (e) {
+      return new Response(
+        JSON.stringify({ status: "error", message: "Failed to add comment" }),
+        {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    }
+  }
+  if (req.method === "GET") {
+    const url = new URL(req.url);
+    const postId = url.searchParams.get("post_id");
+    if (!postId) {
+      return new Response(
+        JSON.stringify({ status: "error", message: "Post ID is required" }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    }
+    try {
+      const comments = db.queryEntries(
+        "SELECT user, comment, created_at FROM comments WHERE post_id = ? ORDER BY created_at DESC",
+        [postId],
+      );
+      return new Response(
+        JSON.stringify({ status: "success", comments: comments }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    } catch (e) {
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: "Failed to fetch comments",
+        }),
+        {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
+        },
+      );
+    }
+  }
+}
+Deno.serve({ port: 2387 }, async (req) => {
   const url = new URL(req.url);
   const path = url.pathname;
-
-  // Pre-flight OPTIONS request
   if (req.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
       headers: {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS", 
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
       },
     });
   }
-
   switch (path) {
     case "/post":
       return await handlePost(req);
@@ -1362,6 +1711,14 @@ Deno.serve({port: 2387}, async (req) => {
       return await handleBlock(req);
     case "/ban":
       return await handleBan(req);
+    case "/follow":
+      return await handleFollow(req);
+    case "/search":
+      return await handleSearch(req);
+    case "/promote":
+      return await handlePromote(req);
+    case "/comment":
+      return await handleComment(req);
     default:
       return new Response("Not Found", { status: 404 });
   }
