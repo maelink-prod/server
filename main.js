@@ -45,6 +45,14 @@ db.execute(`
   );
 `);
 db.execute(`
+  CREATE TABLE IF NOT EXISTS bans (
+    created_at TEXT PRIMARY KEY NOT NULL,
+    banned_by TEXT NOT NULL UNIQUE,
+    reason TEXT NOT NULL,
+    user TEXT NOT NULL UNIQUE
+  );
+`);
+db.execute(`
   CREATE TABLE IF NOT EXISTS follows (
     following TEXT PRIMARY KEY,
     follower TEXT NOT NULL
