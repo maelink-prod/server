@@ -1,28 +1,68 @@
 // deno-lint-ignore-file
 console.log(`Dependencies: Chalk (npm:chalk), Octokit REST (npm:@octokit/rest)
-Install with "deno install <package_name>"`)
+Install with "deno install <package_name>"`);
 import { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
-import { Octokit } from 'npm:@octokit/rest';
+import { Octokit } from "npm:@octokit/rest";
 import chalk from "npm:chalk";
+console.log(chalk.blue(`Server is starting...`));
 const db = new DB("main.db");
 const octokit = new Octokit();
-async function commit(owner, repo, path, branch = 'main') {
+const current = "do things (beta v2.1.0)";
+function returndata(data, code) {
+  return new Response(
+    data,
+    {
+      status: code,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods":
+          "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      },
+    },
+  );
+}
+async function commit(owner, repo, path, branch = "main") {
   try {
     const { data } = await octokit.repos.listCommits({
       owner,
       repo,
       path,
       per_page: 1,
-      sha: branch
+      sha: branch,
     });
     const commitSha = data[0].sha.substring(0, 7);
-    return commitSha;
+    const commitName = data[0].commit.message;
+    return { sha: commitSha, name: commitName };
   } catch (error) {
-    console.error('Error fetching commit:', error);
+    console.log(chalk.red.bold("Error fetching commit:", error));
     throw error;
   }
 }
-console.log(chalk.green.bold(`maelink server BETA (${await commit('delusionsGH', 'maelink', 'main.js')})`));
+console.log(
+  chalk.green.bold(
+    `maelink server BETA (${
+      (await commit(
+        "delusionsGH",
+        "maelink",
+        "main.js",
+      )).sha
+    } - ${
+      (await commit(
+        "delusionsGH",
+        "maelink",
+        "main.js",
+      )).name
+    })`,
+  ),
+);
+if ((await commit("delusionsGH", "maelink", "main.js")).name !== current) {
+  console.log(chalk.red.bold(`WARNING: Server version is outdated!
+Please update to the latest version (${
+(await commit("delusionsGH", "maelink", "main.js")).sha
+})`));
+}
 console.log(chalk.redBright.bold(`
 DISCLAIMER: This server is a public beta, it may be unstable or crash!
 I will fix as much as I can but you are on your own if I can't reproduce an error.`));
@@ -103,13 +143,11 @@ Deno.serve({
     const { socket, response } = Deno.upgradeWebSocket(req);
     socket.addEventListener("open", () => {
       clients.set(socket, { socket, authenticated: false });
-      console.log("client connected");
-      console.log(clients);
+      console.log(chalk.green("Client connected!"));
     });
     socket.addEventListener("close", () => {
       clients.delete(socket);
-      console.log("client disconnected");
-      console.log(clients);
+      console.log(chalk.blue("Client disconnected."));
     });
     socket.addEventListener("message", (event) => {
       try {
@@ -120,8 +158,9 @@ Deno.serve({
             break;
           case "login":
             try {
+              console.log(chalk.blue.bold("Attempting login..."));
               if (typeof data !== "object" || data === null) {
-                console.error("Invalid data format received");
+                console.log(chalk.red.bold("Invalid data format received"));
                 socket.send(JSON.stringify({
                   cmd: "login",
                   status: "error",
@@ -180,7 +219,9 @@ Deno.serve({
                     }));
                     console.log("Login successful for user:", data.username);
                   } else {
-                    console.error("Missing token for user:", data.username);
+                    console.log(
+                      chalk.red.bold("Missing token for user:", data.username),
+                    );
                     socket.send(JSON.stringify({
                       cmd: "login",
                       status: "error",
@@ -188,7 +229,9 @@ Deno.serve({
                     }));
                   }
                 } else {
-                  console.error("No user found for credentials");
+                  console.log(
+                    chalk.red.bold("User doesn't exist/Invalid credentials!"),
+                  );
                   socket.send(JSON.stringify({
                     cmd: "login",
                     status: "error",
@@ -196,7 +239,7 @@ Deno.serve({
                   }));
                 }
               }).catch((error) => {
-                console.error("Hashing error:", error);
+                console.log(chalk.red.bold("Hashing error:", error));
                 socket.send(JSON.stringify({
                   cmd: "login",
                   status: "error",
@@ -204,7 +247,7 @@ Deno.serve({
                 }));
               });
             } catch (dbError) {
-              console.error("Login error:", dbError);
+              console.log(chalk.red.bold("Login error:", dbError));
               socket.send(JSON.stringify({
                 cmd: "login",
                 status: "error",
@@ -221,7 +264,7 @@ Deno.serve({
               socket.send(JSON.stringify({
                 cmd: "post_home",
                 status: "error",
-                message: "unauthorized",
+                message: "Unauthorized",
               }));
               return;
             }
@@ -230,7 +273,7 @@ Deno.serve({
               socket.send(JSON.stringify({
                 cmd: "post",
                 status: "error",
-                message: "invalid post data",
+                message: "Invalid post data",
               }));
               return;
             }
@@ -342,7 +385,7 @@ Deno.serve({
                 reply_to: replyToId,
               });
             } catch (error) {
-              console.error("Post error:", error);
+              console.log(chalk.red.bold("Post error:", error));
               socket.send(JSON.stringify({
                 cmd: "post",
                 status: "error",
@@ -353,7 +396,7 @@ Deno.serve({
           case "login":
             try {
               if (typeof data !== "object" || data === null) {
-                console.error("Invalid data format received");
+                console.log(chalk.red.bold("Invalid data format received"));
                 socket.send(JSON.stringify({
                   cmd: "login",
                   status: "error",
@@ -391,14 +434,24 @@ Deno.serve({
                     console.error(
                       "Banned user attempted login:",
                       data.username,
-                      "Reason:", userData.ban_reason || "No reason provided", 
-                      "Banned at:", userData.ban_created_at || "Unknown date"
+                      "Reason:",
+                      userData.ban_reason || "No reason provided",
+                      "Banned at:",
+                      userData.ban_created_at || "Unknown date",
                     );
                     socket.send(JSON.stringify({
-                      cmd: "login", 
+                      cmd: "login",
                       status: "error",
-                      message: {"message": "ban", "reason": `${userData.ban_reason || "No reason provided"}`, "bannedDate": `${userData.ban_created_at || "Unknown date"}`
-                      }}));
+                      message: {
+                        "message": "ban",
+                        "reason": `${
+                          userData.ban_reason || "No reason provided"
+                        }`,
+                        "bannedDate": `${
+                          userData.ban_created_at || "Unknown date"
+                        }`,
+                      },
+                    }));
                     return;
                   }
                   if (userData.token) {
@@ -414,7 +467,9 @@ Deno.serve({
                     }));
                     console.log("Login successful for user:", data.username);
                   } else {
-                    console.error("Missing token for user:", data.username);
+                    console.log(
+                      chalk.red.bold("Missing token for user:", data.username),
+                    );
                     socket.send(JSON.stringify({
                       cmd: "login",
                       status: "error",
@@ -422,7 +477,7 @@ Deno.serve({
                     }));
                   }
                 } else {
-                  console.error("No user found for credentials");
+                  console.log(chalk.red.bold("No user found for credentials"));
                   socket.send(JSON.stringify({
                     cmd: "login",
                     status: "error",
@@ -430,7 +485,7 @@ Deno.serve({
                   }));
                 }
               }).catch((error) => {
-                console.error("Hashing error:", error);
+                console.log(chalk.red.bold("Hashing error:", error));
                 socket.send(JSON.stringify({
                   cmd: "login",
                   status: "error",
@@ -438,7 +493,7 @@ Deno.serve({
                 }));
               });
             } catch (dbError) {
-              console.error("Login error:", dbError);
+              console.log(chalk.red.bold("Login error:", dbError));
               socket.send(JSON.stringify({
                 cmd: "login",
                 status: "error",
@@ -479,12 +534,12 @@ Deno.serve({
                   }));
                 });
             } catch (e) {
-              console.error("Registration error:", e);
+              console.log(chalk.red.bold("Registration error:", e));
               try {
                 const existingUsers = db.queryEntries("SELECT * FROM users");
                 console.log("Existing users:", existingUsers);
               } catch (queryError) {
-                console.error("Query error:", queryError);
+                console.log(chalk.red.bold("Query error:", queryError));
               }
               socket.send(JSON.stringify({
                 cmd: "register",
@@ -496,7 +551,6 @@ Deno.serve({
           case "fetch":
             console.log("Fetch attempt:", data);
             const fetchClient = clients.get(socket);
-            console.log("Client state for fetch:", fetchClient);
             if (!fetchClient?.authenticated) {
               console.log("Unauthorized fetch attempt");
               socket.send(JSON.stringify({
@@ -522,7 +576,7 @@ Deno.serve({
                 posts: posts,
               }));
             } catch (error) {
-              console.error("Fetch error:", error);
+              console.log(chalk.red.bold("Fetch error:", error));
               socket.send(JSON.stringify({
                 cmd: "fetch",
                 status: "error",
@@ -532,7 +586,7 @@ Deno.serve({
             break;
         }
       } catch (e) {
-        console.error("Message handling error:", e);
+        console.log(chalk.red.bold("Message handling error:", e));
         socket.send(JSON.stringify({
           status: "error",
           message: "Error processing message",
@@ -546,20 +600,12 @@ async function handleRegister(req) {
   const data = await req.json();
   try {
     if (!data.user || !data.password) {
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "error",
           message: "Username and password are required",
         }),
-        {
-          status: 400,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        400,
       );
     }
     const token = crypto.randomUUID();
@@ -576,38 +622,23 @@ async function handleRegister(req) {
     );
     stmt.execute([data.user, token, "user", hashedPassword, 0]);
     stmt.finalize();
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "success",
         token: token,
       }),
-      {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      200,
     );
-    autoPromote()
+
+    autoPromote();
   } catch (e) {
-    console.error("Registration error:", e);
-    return new Response(
+    console.log(chalk.red.bold("Registration error:", e));
+    return returndata(
       JSON.stringify({
         status: "error",
         message: `Registration failed: ${e.message}`,
       }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      500,
     );
   }
 }
@@ -615,20 +646,12 @@ async function handleLogin(req) {
   const data = await req.json();
   try {
     if (!data.username || !data.password) {
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "error",
           message: "Username and password are required",
         }),
-        {
-          status: 400,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        400,
       );
     }
     const hashedPassword = Array.from(
@@ -647,68 +670,36 @@ async function handleLogin(req) {
       const userData = user[0];
       const userAccess = await checkUserAccess(userData.token);
       if (!userAccess) {
-        return new Response(
+        return returndata(
           JSON.stringify({
             status: "error",
             message: "This account has been banned",
           }),
-          {
-            status: 403,
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-              "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-              "Access-Control-Allow-Headers": "Content-Type, Authorization",
-            },
-          },
+          403,
         );
       }
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "success",
           token: userData.token,
         }),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        200,
       );
     }
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Invalid credentials",
       }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      401,
     );
   } catch (e) {
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: `Login failed: ${e.message}`,
       }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      500,
     );
   }
 }
@@ -736,20 +727,12 @@ async function checkUserAccess(auth, target_user = null) {
 async function handlePost(req) {
   const auth = req.headers.get("Authorization");
   if (!auth) {
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Unauthorized",
       }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      401,
     );
   }
   const user = db.queryEntries(
@@ -757,20 +740,12 @@ async function handlePost(req) {
     [auth],
   )[0];
   if (!user) {
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Invalid token",
       }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      401,
     );
   }
   const data = await req.json();
@@ -783,147 +758,94 @@ async function handlePost(req) {
     );
     stmt.execute([id, data.post, user.user, timestamp, replyToId]);
     stmt.finalize();
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "success",
         id: id,
         timestamp: timestamp,
       }),
-      {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      200,
     );
   } catch (e) {
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Failed to save post",
       }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      500,
     );
   }
 }
 async function handleFetch(req) {
   const auth = req.headers.get("Authorization");
   if (!auth) {
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Unauthorized",
       }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      401,
     );
   }
-  const user = db.queryEntries(
-    "SELECT * FROM users WHERE token = ?",
-    [auth],
-  )[0];
+  const user = await checkUserAccess(auth);
   if (!user) {
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Invalid token",
       }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      401,
     );
   }
   const url = new URL(req.url);
-  const username = url.searchParams.get("username");
   const offset = parseInt(url.searchParams.get("offset") || "0");
-  try {
-    const posts = db.queryEntries(
-      `SELECT post, user, created_at, id, reply_to 
-       FROM posts 
-       WHERE user = ? 
-       OR user IN (
-         SELECT followed 
-         FROM follows 
-         WHERE follower = ?
-       )
-       ORDER BY created_at DESC 
-       LIMIT ? OFFSET ?`,
-      [username, username, 10, offset],
-    );
-    return new Response(
-      JSON.stringify({
-        status: "success",
-        posts: posts,
-      }),
-      {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
-    );
-  } catch (e) {
-    return new Response(
+  if (isNaN(offset) || offset < 0) {
+    return returndata(
       JSON.stringify({
         status: "error",
-        message: "Failed to fetch posts",
+        message: "Invalid offset parameter",
       }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      400,
+    );
+  }
+  try {
+    const posts = db.queryEntries(
+      `SELECT p.post, p.user, p.created_at, p.id, p.reply_to 
+       FROM posts p
+       INNER JOIN follows f ON p.user = f.following
+       WHERE f.follower = ?
+       ORDER BY p.created_at DESC 
+       LIMIT ? OFFSET ?`,
+      [user.user, 10, offset],
+    );
+    const safePostsArray = Array.isArray(posts) ? posts : [];
+    return returndata(
+      JSON.stringify({
+        status: "success",
+        posts: safePostsArray,
+      }),
+      200,
+    );
+  } catch (e) {
+    console.log(chalk.red.bold("Post fetch error:"), e);
+    return returndata(
+      JSON.stringify({
+        status: "error",
+        message: `Failed to fetch posts: ${e.message}`,
+      }),
+      500,
     );
   }
 }
 async function handleFollows(req) {
   const auth = req.headers.get("Authorization");
   if (!auth) {
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Unauthorized",
       }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      401,
     );
   }
   const user = db.queryEntries(
@@ -931,60 +853,36 @@ async function handleFollows(req) {
     [auth],
   )[0];
   if (!user) {
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Invalid token",
       }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      401,
     );
   }
   const url = new URL(req.url);
   const username = url.searchParams.get("user");
   try {
     const follows = db.queryEntries(
-      "SELECT followed FROM follows WHERE follower = ?",
+      "SELECT following FROM follows WHERE follower = ?",
       [username],
     );
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "success",
-        follows: follows.map((f) => f.followed),
+        follows: follows.map((f) => f.following),
       }),
-      {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      200,
     );
   } catch (e) {
     console.log(e);
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Failed to fetch follows",
       }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      500,
     );
   }
 }
@@ -992,39 +890,23 @@ async function handleBlock(req) {
   const auth = req.headers.get("Authorization");
   const user = await checkUserAccess(auth);
   if (!user) {
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Unauthorized",
       }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      401,
     );
   }
   if (req.method === "POST") {
     const data = await req.json();
     if (!data.user) {
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "error",
           message: "User to block is required",
         }),
-        {
-          status: 400,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        400,
       );
     }
     try {
@@ -1032,56 +914,32 @@ async function handleBlock(req) {
         "INSERT INTO blocked_users (blocker, blocked, created_at) VALUES (?, ?, ?)",
         [user.user, data.user, Date.now()],
       );
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "success",
           message: "User blocked successfully",
         }),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        200,
       );
     } catch (e) {
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "error",
           message: "Failed to block user",
         }),
-        {
-          status: 500,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        500,
       );
     }
   } else if (req.method === "DELETE") {
     const url = new URL(req.url);
     const blocked_user = url.searchParams.get("user");
     if (!blocked_user) {
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "error",
           message: "User parameter is required",
         }),
-        {
-          status: 400,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        400,
       );
     }
     try {
@@ -1089,36 +947,20 @@ async function handleBlock(req) {
         "DELETE FROM blocked_users WHERE blocker = ? AND blocked = ?",
         [user.user, blocked_user],
       );
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "success",
           message: "User unblocked successfully",
         }),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        200,
       );
     } catch (e) {
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "error",
           message: "Failed to unblock user",
         }),
-        {
-          status: 500,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        500,
       );
     }
   }
@@ -1127,39 +969,23 @@ async function handleBan(req) {
   const auth = req.headers.get("Authorization");
   const user = await checkUserAccess(auth);
   if (!user || !user.is_mod) {
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Unauthorized - Admin access required",
       }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      401,
     );
   }
   if (req.method === "POST") {
     const data = await req.json();
     if (!data.user) {
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "error",
           message: "User to ban is required",
         }),
-        {
-          status: 400,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        400,
       );
     }
     try {
@@ -1167,36 +993,20 @@ async function handleBan(req) {
         "INSERT INTO bans (user, banned_by, reason, created_at) VALUES (?, ?, ?, ?)",
         [data.user, user.user, data.reason || null, Date.now()],
       );
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "success",
           message: "User banned successfully",
         }),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        200,
       );
     } catch (e) {
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "error",
           message: "Failed to ban user",
         }),
-        {
-          status: 500,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        500,
       );
     }
   } else if (req.method === "DELETE") {
@@ -1204,20 +1014,12 @@ async function handleBan(req) {
     const banned_user = url.searchParams.get("user");
 
     if (!banned_user) {
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "error",
           message: "User parameter is required",
         }),
-        {
-          status: 400,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        400,
       );
     }
     try {
@@ -1225,36 +1027,20 @@ async function handleBan(req) {
         "DELETE FROM bans WHERE user = ?",
         [banned_user],
       );
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "success",
           message: "User unbanned successfully",
         }),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        200,
       );
     } catch (e) {
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "error",
           message: "Failed to unban user",
         }),
-        {
-          status: 500,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        500,
       );
     }
   }
@@ -1262,20 +1048,12 @@ async function handleBan(req) {
 async function handleUserPosts(req) {
   const auth = req.headers.get("Authorization");
   if (!auth) {
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Unauthorized",
       }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      401,
     );
   }
   const user = db.queryEntries(
@@ -1283,20 +1061,12 @@ async function handleUserPosts(req) {
     [auth],
   )[0];
   if (!user) {
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Invalid token",
       }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      401,
     );
   }
   const url = new URL(req.url);
@@ -1307,36 +1077,20 @@ async function handleUserPosts(req) {
       "SELECT post, user, created_at, id, reply_to FROM posts WHERE user = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
       [username, 10, offset],
     );
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "success",
         posts: posts,
       }),
-      {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      200,
     );
   } catch (e) {
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Failed to fetch user posts",
       }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      500,
     );
   }
 }
@@ -1344,39 +1098,23 @@ async function handleFollow(req) {
   const auth = req.headers.get("Authorization");
   const user = await checkUserAccess(auth);
   if (!user) {
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Unauthorized",
       }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      401,
     );
   }
   if (req.method === "POST") {
     const data = await req.json();
     if (!data.user) {
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "error",
           message: "User to follow is required",
         }),
-        {
-          status: 400,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        400,
       );
     }
     try {
@@ -1384,36 +1122,20 @@ async function handleFollow(req) {
         "INSERT INTO follows (follower, following, created_at) VALUES (?, ?, ?)",
         [user.user, data.user, Date.now()],
       );
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "success",
           message: "User followed successfully",
         }),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        200,
       );
     } catch (e) {
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "error",
           message: "Failed to follow user",
         }),
-        {
-          status: 500,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        500,
       );
     }
   }
@@ -1422,39 +1144,23 @@ async function handleSearch(req) {
   const auth = req.headers.get("Authorization");
   const user = await checkUserAccess(auth);
   if (!user) {
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Unauthorized",
       }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      401,
     );
   }
   const url = new URL(req.url);
   const query = url.searchParams.get("q");
   if (!query) {
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Search query is required",
       }),
-      {
-        status: 400,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      400,
     );
   }
   try {
@@ -1462,36 +1168,20 @@ async function handleSearch(req) {
       "SELECT post, user, created_at, id, reply_to FROM posts WHERE post LIKE ? OR user LIKE ? ORDER BY created_at DESC LIMIT 20",
       [`%${query}%`, `%${query}%`],
     );
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "success",
         posts: posts,
       }),
-      {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      200,
     );
   } catch (e) {
-    return new Response(
+    return returndata(
       JSON.stringify({
         status: "error",
         message: "Failed to search posts",
       }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      500,
     );
   }
 }
@@ -1499,67 +1189,35 @@ async function handlePromote(req) {
   const auth = req.headers.get("Authorization");
   const user = await checkUserAccess(auth);
   if (!user || !user.is_mod) {
-    return new Response(
+    return returndata(
       JSON.stringify({ status: "error", message: "Unauthorized" }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      401,
     );
   }
   if (req.method === "POST") {
     const data = await req.json();
     if (!data.user) {
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "error",
           message: "User to promote is required",
         }),
-        {
-          status: 400,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        400,
       );
     }
     try {
       db.execute("UPDATE users SET is_mod = 1 WHERE user = ?", [data.user]);
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "success",
           message: "User promoted successfully",
         }),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        200,
       );
     } catch (e) {
-      return new Response(
+      return returndata(
         JSON.stringify({ status: "error", message: "Failed to promote user" }),
-        {
-          status: 500,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        500,
       );
     }
   }
@@ -1568,36 +1226,20 @@ async function handleComment(req) {
   const auth = req.headers.get("Authorization");
   const user = await checkUserAccess(auth);
   if (!user) {
-    return new Response(
+    return returndata(
       JSON.stringify({ status: "error", message: "Unauthorized" }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      },
+      401,
     );
   }
   if (req.method === "POST") {
     const data = await req.json();
     if (!data.comment) {
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "error",
           message: "Comment text is required",
         }),
-        {
-          status: 400,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        400,
       );
     }
     try {
@@ -1606,33 +1248,17 @@ async function handleComment(req) {
         "INSERT INTO comments (id, post_id, user, comment, created_at) VALUES (?, ?, ?, ?, ?)",
         [commentId, data.post_id, user.user, data.comment, Date.now()],
       );
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "success",
           message: "Comment added successfully",
         }),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        200,
       );
     } catch (e) {
-      return new Response(
+      return returndata(
         JSON.stringify({ status: "error", message: "Failed to add comment" }),
-        {
-          status: 500,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        500,
       );
     }
   }
@@ -1640,17 +1266,9 @@ async function handleComment(req) {
     const url = new URL(req.url);
     const postId = url.searchParams.get("post_id");
     if (!postId) {
-      return new Response(
+      return returndata(
         JSON.stringify({ status: "error", message: "Post ID is required" }),
-        {
-          status: 400,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        400,
       );
     }
     try {
@@ -1658,33 +1276,17 @@ async function handleComment(req) {
         "SELECT user, comment, created_at FROM comments WHERE post_id = ? ORDER BY created_at DESC",
         [postId],
       );
-      return new Response(
+      return returndata(
         JSON.stringify({ status: "success", comments: comments }),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        200,
       );
     } catch (e) {
-      return new Response(
+      return returndata(
         JSON.stringify({
           status: "error",
           message: "Failed to fetch comments",
         }),
-        {
-          status: 500,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          },
-        },
+        500,
       );
     }
   }
