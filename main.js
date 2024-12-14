@@ -8,7 +8,7 @@ console.log(chalk.blue(`Server is starting...`));
 const db = new DB("main.db");
 const clients = new Map();
 const octokit = new Octokit();
-const current = "oopsies (beta v2.2.01)";
+const current = "make delete (beta v2.3.0)";
 function returndata(data, code) {
   return new Response(
     data,
@@ -644,6 +644,33 @@ Deno.serve({
               }));
             }
             break;
+          case "purge":
+            const purgeClient = clients.get(socket);
+            if (
+              !purgeClient?.authenticated || purgeClient.user !== "delusions"
+            ) {
+              socket.send(JSON.stringify({
+                cmd: "purge",
+                status: "error",
+                message: "unauthorized",
+              }));
+              return;
+            }
+            try {
+              db.query("DELETE FROM rtposts");
+              socket.send(JSON.stringify({
+                cmd: "purge",
+                status: "success",
+              }));
+            } catch (error) {
+              console.log(chalk.red.bold("Purge error:", error));
+              socket.send(JSON.stringify({
+                cmd: "purge",
+                status: "error",
+                message: "Failed to purge posts",
+              }));
+            }
+            break;
         }
       } catch (e) {
         console.log(chalk.red.bold("Message handling error:", e));
@@ -682,6 +709,7 @@ async function handleRegister(req) {
     );
     stmt.execute([data.user, token, "user", hashedPassword, 0]);
     stmt.finalize();
+    autoPromote();
     return returndata(
       JSON.stringify({
         status: "success",
@@ -689,8 +717,6 @@ async function handleRegister(req) {
       }),
       200,
     );
-
-    autoPromote();
   } catch (e) {
     console.log(chalk.red.bold("Registration error:", e));
     return returndata(
