@@ -6,6 +6,7 @@ import { Octokit } from "npm:@octokit/rest";
 import chalk from "npm:chalk";
 console.log(chalk.blue(`Server is starting...`));
 const db = new DB("main.db");
+const clients = new Map();
 const octokit = new Octokit();
 const current = "do things (beta v2.1.0)";
 function returndata(data, code) {
@@ -60,8 +61,8 @@ console.log(
 if ((await commit("delusionsGH", "maelink", "main.js")).name !== current) {
   console.log(chalk.red.bold(`WARNING: Server version is outdated!
 Please update to the latest version (${
-(await commit("delusionsGH", "maelink", "main.js")).sha
-})`));
+    (await commit("delusionsGH", "maelink", "main.js")).sha
+  })`));
 }
 console.log(chalk.redBright.bold(`
 DISCLAIMER: This server is a public beta, it may be unstable or crash!
@@ -139,15 +140,32 @@ Deno.serve({
     if (req.headers.get("upgrade") != "websocket") {
       return new Response(null, { status: 501 });
     }
-    const clients = new Map();
     const { socket, response } = Deno.upgradeWebSocket(req);
+    let lastClientsSize = 0;
+    setInterval(() => {
+      if (clients.size !== lastClientsSize) {
+        console.log("Clients Map size changed:", {
+          previous: lastClientsSize,
+          current: clients.size,
+          timestamp: new Date().toISOString(),
+        });
+        lastClientsSize = clients.size;
+      }
+    }, 1000);
     socket.addEventListener("open", () => {
-      clients.set(socket, { socket, authenticated: false });
-      console.log(chalk.green("Client connected!"));
+      console.log("New connection established");
+      console.log(`Total clients before adding: ${clients.size}`);
+      clients.set(socket, {
+        authenticated: false,
+        user: null,
+      });
+      console.log(`Total clients after adding: ${clients.size}`);
     });
     socket.addEventListener("close", () => {
+      console.log("Client disconnected");
+      console.log(`Total clients before removal: ${clients.size}`);
       clients.delete(socket);
-      console.log(chalk.blue("Client disconnected."));
+      console.log(`Total clients after removal: ${clients.size}`);
     });
     socket.addEventListener("message", (event) => {
       try {
@@ -207,11 +225,15 @@ Deno.serve({
                     return;
                   }
                   if (userData.token) {
-                    clients.set(socket, {
-                      socket,
-                      authenticated: true,
-                      user: data.username,
-                    });
+                    if (user && user.length > 0) {
+                      console.log(`User ${data.username} authenticated`);
+                      console.log("Current clients map size:", clients.size);
+                      clients.set(socket, {
+                        authenticated: true,
+                        user: data.username,
+                      });
+                      console.log("Updated client state:", clients.get(socket));
+                    }
                     socket.send(JSON.stringify({
                       cmd: "login",
                       status: "success",
@@ -349,11 +371,50 @@ Deno.serve({
                   type: "1",
                 },
               });
-              for (const [clientSocket, clientData] of clients) {
-                if (clientData.authenticated) {
-                  clientSocket.send(postNotification);
-                }
+              function broadcast(message) {
+                const messageStr = typeof message === "string"
+                  ? message
+                  : JSON.stringify(message);
+                console.log(`Broadcasting to ${clients.size} total clients`);
+                let sentCount = 0;
+                let authenticatedCount = 0;
+
+                clients.forEach((clientData, clientSocket) => {
+                  console.log("Checking client:", {
+                    user: clientData.user,
+                    authenticated: clientData.authenticated,
+                    readyState: clientSocket.readyState,
+                    isOpen: clientSocket.readyState === WebSocket.OPEN,
+                  });
+
+                  if (clientData.authenticated) {
+                    authenticatedCount++;
+                  }
+
+                  if (
+                    clientData.authenticated &&
+                    clientSocket.readyState === WebSocket.OPEN
+                  ) {
+                    try {
+                      clientSocket.send(messageStr);
+                      sentCount++;
+                    } catch (error) {
+                      console.error(
+                        "Broadcast error for user:",
+                        clientData.user,
+                        error,
+                      );
+                    }
+                  }
+                });
+
+                console.log(`Authentication summary:
+                    Total clients: ${clients.size}
+                    Authenticated clients: ${authenticatedCount}
+                    Successfully sent to: ${sentCount}
+                `);
               }
+              broadcast(postNotification);
               socket.send(JSON.stringify({
                 _id: id,
                 p: data.p,
@@ -569,7 +630,6 @@ Deno.serve({
               const posts = db.queryEntries(
                 `SELECT _id, p, u, e, reply_to, author, post_origin, isDeleted, emojis, pinned, post_id, attachments, reactions, type FROM rtposts DESC LIMIT 10 OFFSET 0`,
               );
-              console.log("Fetched posts:", posts);
               socket.send(JSON.stringify({
                 cmd: "fetch",
                 status: "success",
