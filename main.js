@@ -8,7 +8,7 @@ console.log(chalk.blue(`Server is starting...`));
 const db = new DB("main.db");
 const clients = new Map();
 const octokit = new Octokit();
-const current = "make delete (beta v2.3.0)";
+const current = "token login finally (beta v2.4.0)";
 function returndata(data, code) {
   return new Response(
     data,
@@ -171,26 +171,63 @@ Deno.serve({
       try {
         const data = JSON.parse(event.data);
         switch (data.cmd) {
-          case "ping":
-            socket.send("pong");
-            break;
           case "login":
             try {
               console.log(chalk.blue.bold("Attempting login..."));
               if (typeof data !== "object" || data === null) {
                 console.log(chalk.red.bold("Invalid data format received"));
                 socket.send(JSON.stringify({
-                  cmd: "login",
+                  cmd: "login", 
                   status: "error",
-                  message: "Invalid data format",
+                  message: "Invalid data format"
                 }));
                 return;
               }
+              if (data.token) {
+                const query = "SELECT * FROM users WHERE token = ?";
+                const params = [data.token];
+                const user = db.queryEntries(query, params);
+                if (user && user.length > 0) {
+                  const userData = user[0];
+                  if (userData.banned) {
+                    console.log(chalk.red.bold("Banned user attempted token login:", userData.user));
+                    socket.send(JSON.stringify({
+                      cmd: "login",
+                      status: "error", 
+                      message: "This account has been banned"
+                    }));
+                    return;
+                  }
+                  console.log(`User ${userData.user} authenticated via token`);
+                  console.log("Current clients map size:", clients.size);
+                  clients.set(socket, {
+                    authenticated: true,
+                    user: userData.user
+                  });
+                  console.log("Updated client state:", clients.get(socket));
+
+                  socket.send(JSON.stringify({
+                    cmd: "login",
+                    status: "success",
+                    payload: JSON.stringify({ token: userData.token })
+                  }));
+                  console.log("Token login successful for user:", userData.user);
+                  return;
+                } else {
+                  console.log(chalk.red.bold("Invalid token login attempt"));
+                  socket.send(JSON.stringify({
+                    cmd: "login",
+                    status: "error",
+                    message: "Invalid token"
+                  }));
+                  return;
+                }
+              }
               if (!data.username || !data.password) {
-                console.error("Missing credentials:", {
+                console.log(chalk.red.bold("Missing credentials:", {
                   username: data.username,
                   password: !!data.password,
-                });
+                }));
                 socket.send(JSON.stringify({
                   cmd: "login",
                   status: "error",
@@ -466,10 +503,10 @@ Deno.serve({
                 return;
               }
               if (!data.username || !data.password) {
-                console.error("Missing credentials:", {
+                console.log(chalk.red.bold("Missing credentials:", {
                   username: data.username,
                   password: !!data.password,
-                });
+                }));
                 socket.send(JSON.stringify({
                   cmd: "login",
                   status: "error",
