@@ -8,7 +8,7 @@ console.log(chalk.blue(`Server is starting...`));
 const db = new DB("main.db");
 const clients = new Map();
 const octokit = new Octokit();
-const current = "do things (beta v2.1.0)";
+const current = "oopsies (beta v2.2.01)";
 function returndata(data, code) {
   return new Response(
     data,
