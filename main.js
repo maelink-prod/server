@@ -345,6 +345,9 @@ Deno.serve({
                 "[]",
                 "1",
               ]);
+              const verifyQuery = "SELECT * FROM posts WHERE _id = ?";
+              const verifyPost = db.queryEntries(verifyQuery, [id]);
+              console.log("Verification of saved post:", verifyPost);
               stmt.finalize();
               const postNotification = JSON.stringify({
                 post: {
@@ -441,7 +444,7 @@ Deno.serve({
               console.log("Post successful:", {
                 id: id,
                 user: postClient.user,
-                post: data.post,
+                post: data.p,
                 timestamp: timestamp,
                 reply_to: replyToId,
               });
