@@ -345,9 +345,6 @@ Deno.serve({
                 "[]",
                 "1",
               ]);
-              const verifyQuery = "SELECT * FROM rtposts WHERE _id = ?";
-              const verifyPost = db.queryEntries(verifyQuery, [id]);
-              console.log("Verification of saved post:", verifyPost);
               stmt.finalize();
               const postNotification = JSON.stringify({
                 post: {
@@ -631,7 +628,7 @@ Deno.serve({
                 offset,
               );
               const posts = db.queryEntries(
-                `SELECT _id, p, u, e, reply_to, author, post_origin, isDeleted, emojis, pinned, post_id, attachments, reactions, type FROM rtposts DESC LIMIT 10 OFFSET 0`,
+                `SELECT _id, p, u, e, reply_to, author, post_origin, isDeleted, emojis, pinned, post_id, attachments, reactions, type FROM rtposts ORDER BY json_extract(e, '$.t') DESC LIMIT 10 OFFSET ${offset}`,
               );
               socket.send(JSON.stringify({
                 cmd: "fetch",
