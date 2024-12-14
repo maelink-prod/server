@@ -8,7 +8,7 @@ console.log(chalk.blue(`Server is starting...`));
 const db = new DB("main.db");
 const clients = new Map();
 const octokit = new Octokit();
-const current = "token login finally (beta v2.4.0)";
+const current = "goodbye to that (beta v2.4.1)";
 function returndata(data, code) {
   return new Response(
     data,
@@ -452,29 +452,6 @@ Deno.serve({
                 `);
               }
               broadcast(postNotification);
-              socket.send(JSON.stringify({
-                _id: id,
-                p: data.p,
-                u: postClient.user,
-                e: JSON.stringify({ "t": timestamp }),
-                reply_to: replyToId,
-                post_origin: "home",
-                author: JSON.stringify({
-                  _id: postClient.user,
-                  pfp_data: "24",
-                  avatar: "null",
-                  avatar_color: "000000",
-                  flags: "0",
-                  uuid: "00000000-0000-0000-0000-000000000000",
-                }),
-                isDeleted: "false",
-                emojis: [],
-                pinned: false,
-                post_id: id,
-                attachments: [],
-                reactions: [],
-                type: "1",
-              }));
               console.log("Post successful:", {
                 id: id,
                 user: postClient.user,
