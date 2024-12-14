@@ -345,7 +345,7 @@ Deno.serve({
                 "[]",
                 "1",
               ]);
-              const verifyQuery = "SELECT * FROM posts WHERE _id = ?";
+              const verifyQuery = "SELECT * FROM rtposts WHERE _id = ?";
               const verifyPost = db.queryEntries(verifyQuery, [id]);
               console.log("Verification of saved post:", verifyPost);
               stmt.finalize();
