@@ -5,10 +5,11 @@ import { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
 import { Octokit } from "npm:@octokit/rest";
 import chalk from "npm:chalk";
 console.log(chalk.blue(`Server is starting...`));
+const dev = 0
 const db = new DB("main.db");
 const clients = new Map();
 const octokit = new Octokit();
-const current = "goodbye to that (beta v2.4.1)";
+const current = "Release 1 - Public Preview";
 function returndata(data, code) {
   return new Response(
     data,
@@ -42,31 +43,40 @@ async function commit(owner, repo, path, branch = "main") {
   }
 }
 console.log(
-  chalk.green.bold(
-    `maelink server BETA (${
-      (await commit(
-        "delusionsGH",
-        "maelink",
-        "main.js",
-      )).sha
-    } - ${
-      (await commit(
-        "delusionsGH",
-        "maelink",
-        "main.js",
-      )).name
-    })`,
-  ),
+  chalk.red.bold(
+    `                       _        _    
+                      | (_)     | |   
+  _ __ ___   __ _  ___| |_ _ __ | | __
+ | '_ \` _  \\ / _\`|/ _ \\ | | '_ \\| |/ /
+ | | | | | | (_| |  __/ | | | | |   < 
+ |_| |_| |_|\\__,_|\\___|_|_|_| |_|_|\\_\\
+  `
+  )
 );
-if ((await commit("delusionsGH", "maelink", "main.js")).name !== current) {
-  console.log(chalk.red.bold(`WARNING: Server version is outdated!
-Please update to the latest version (${
-    (await commit("delusionsGH", "maelink", "main.js")).sha
-  })`));
+
+if (dev === 1 || (await commit("delusionsGH", "maelink", "main.js")).name !== current) {
+    console.log(chalk.red.bold(`
+server - version (${current}) | DEV/OUTDATED`));
+  } else {
+  console.log(chalk.red.bold(`
+server - version (${(await commit("delusionsGH", "maelink", "main.js")).sha} - ${(await commit("delusionsGH", "maelink", "main.js")).name})`));
 }
-console.log(chalk.redBright.bold(`
-DISCLAIMER: This server is a public beta, it may be unstable or crash!
-I will fix as much as I can but you are on your own if I can't reproduce an error.`));
+
+if (dev === 0) {
+  if ((await commit("delusionsGH", "maelink", "main.js")).name !== current) {
+    console.log(chalk.red.bold(`
+WARNING: Server version mismatch!
+If this is a production environment, unless you know EXACTLY what you're doing, please use the current stable version (${(await commit("delusionsGH", "maelink", "main.js")).sha})`));
+  }
+} else if (dev === 1) {
+  console.log(chalk.yellow(`
+This is a development server! May be unstable, may crash, may do unexplainable things that transcend what is thought to be humanly possible. Use at your own risk.`));
+} else {
+  console.log(chalk.green.bold(`
+This is the public preview of Release 1. It has the baseline features maelink needs to be functional, but there are still a few cool features I want to add back that I deleted in past versions due to code refactors.
+If you find any bugs, please don't hesitate to make an issue on the GitHub repository!
+-delusions`));
+}
 console.log(chalk.blueBright.bold(`
 HTTP: port 2387 | WS: port 3783`));
 async function autoPromote() {
@@ -123,15 +133,7 @@ db.execute(`
     u TEXT,
     e INTEGER NOT NULL,
     reply_to TEXT,
-    author TEXT NOT NULL,
-    post_origin TEXT NOT NULL,
-    isDeleted TEXT NOT NULL,
-    emojis TEXT NOT NULL,
-    pinned TEXT NOT NULL,
-    post_id TEXT NOT NULL,
-    attachments TEXT NOT NULL,
-    reactions TEXT NOT NULL,
-    type INTEGER NOT NULL
+    post_id TEXT NOT NULL
   )
 `);
 Deno.serve({
@@ -144,28 +146,17 @@ Deno.serve({
     let lastClientsSize = 0;
     setInterval(() => {
       if (clients.size !== lastClientsSize) {
-        console.log("Clients Map size changed:", {
-          previous: lastClientsSize,
-          current: clients.size,
-          timestamp: new Date().toISOString(),
-        });
         lastClientsSize = clients.size;
       }
     }, 1000);
     socket.addEventListener("open", () => {
-      console.log("New connection established");
-      console.log(`Total clients before adding: ${clients.size}`);
       clients.set(socket, {
         authenticated: false,
         user: null,
       });
-      console.log(`Total clients after adding: ${clients.size}`);
     });
     socket.addEventListener("close", () => {
-      console.log("Client disconnected");
-      console.log(`Total clients before removal: ${clients.size}`);
       clients.delete(socket);
-      console.log(`Total clients after removal: ${clients.size}`);
     });
     socket.addEventListener("message", (event) => {
       try {
@@ -173,11 +164,9 @@ Deno.serve({
         switch (data.cmd) {
           case "login":
             try {
-              console.log(chalk.blue.bold("Attempting login..."));
               if (typeof data !== "object" || data === null) {
-                console.log(chalk.red.bold("Invalid data format received"));
                 socket.send(JSON.stringify({
-                  cmd: "login", 
+                  cmd: "login",
                   status: "error",
                   message: "Invalid data format"
                 }));
@@ -193,7 +182,7 @@ Deno.serve({
                     console.log(chalk.red.bold("Banned user attempted token login:", userData.user));
                     socket.send(JSON.stringify({
                       cmd: "login",
-                      status: "error", 
+                      status: "error",
                       message: "This account has been banned"
                     }));
                     return;
@@ -204,17 +193,13 @@ Deno.serve({
                     authenticated: true,
                     user: userData.user
                   });
-                  console.log("Updated client state:", clients.get(socket));
-
                   socket.send(JSON.stringify({
                     cmd: "login",
                     status: "success",
                     payload: JSON.stringify({ token: userData.token })
                   }));
-                  console.log("Token login successful for user:", userData.user);
                   return;
                 } else {
-                  console.log(chalk.red.bold("Invalid token login attempt"));
                   socket.send(JSON.stringify({
                     cmd: "login",
                     status: "error",
@@ -224,10 +209,6 @@ Deno.serve({
                 }
               }
               if (!data.username || !data.password) {
-                console.log(chalk.red.bold("Missing credentials:", {
-                  username: data.username,
-                  password: !!data.password,
-                }));
                 socket.send(JSON.stringify({
                   cmd: "login",
                   status: "error",
@@ -250,10 +231,6 @@ Deno.serve({
                 if (user && user.length > 0) {
                   const userData = user[0];
                   if (userData.banned) {
-                    console.error(
-                      "Banned user attempted login:",
-                      data.username,
-                    );
                     socket.send(JSON.stringify({
                       cmd: "login",
                       status: "error",
@@ -263,8 +240,6 @@ Deno.serve({
                   }
                   if (userData.token) {
                     if (user && user.length > 0) {
-                      console.log(`User ${data.username} authenticated`);
-                      console.log("Current clients map size:", clients.size);
                       clients.set(socket, {
                         authenticated: true,
                         user: data.username,
@@ -278,9 +253,6 @@ Deno.serve({
                     }));
                     console.log("Login successful for user:", data.username);
                   } else {
-                    console.log(
-                      chalk.red.bold("Missing token for user:", data.username),
-                    );
                     socket.send(JSON.stringify({
                       cmd: "login",
                       status: "error",
@@ -288,9 +260,6 @@ Deno.serve({
                     }));
                   }
                 } else {
-                  console.log(
-                    chalk.red.bold("User doesn't exist/Invalid credentials!"),
-                  );
                   socket.send(JSON.stringify({
                     cmd: "login",
                     status: "error",
@@ -315,11 +284,23 @@ Deno.serve({
             }
             break;
           case "post":
-            console.log("Post attempt:", data);
-            const postClient = clients.get(socket);
-            console.log("Client state:", postClient);
+            let postClient;
+            if (data.token) {
+              const user = db.queryEntries(
+                "SELECT * FROM users WHERE token = ?",
+                [data.token]
+              )[0];
+              if (user) {
+                postClient = {
+                  authenticated: true,
+                  user: user.user
+                };
+              }
+            }
+            if (!postClient) {
+              postClient = clients.get(socket);
+            }
             if (!postClient?.authenticated) {
-              console.log("Unauthorized post attempt");
               socket.send(JSON.stringify({
                 cmd: "post_home",
                 status: "error",
@@ -328,7 +309,6 @@ Deno.serve({
               return;
             }
             if (!data.p || typeof data.p !== "string") {
-              console.log("Invalid post data:", data);
               socket.send(JSON.stringify({
                 cmd: "post",
                 status: "error",
@@ -357,7 +337,7 @@ Deno.serve({
               const timestamp = Date.now();
               const id = crypto.randomUUID();
               const stmt = db.prepareQuery(
-                "INSERT INTO rtposts (_id, p, u, e, reply_to, author, post_origin, isDeleted, emojis, pinned, post_id, attachments, reactions, type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO rtposts (_id, p, u, e, reply_to, post_id) VALUES (?, ?, ?, ?, ?, ?)",
               );
               stmt.execute([
                 id,
@@ -365,100 +345,75 @@ Deno.serve({
                 postClient.user,
                 JSON.stringify({ t: timestamp }),
                 replyToId,
-                JSON.stringify({
-                  _id: postClient.user,
-                  pfp_data: "24",
-                  avatar: "null",
-                  avatar_color: "000000",
-                  flags: "0",
-                  uuid: "00000000-0000-0000-0000-000000000000",
-                }),
-                "home",
-                "false",
-                "[]",
-                "false",
-                id,
-                "[]",
-                "[]",
-                "1",
+                id
               ]);
               stmt.finalize();
               const postNotification = JSON.stringify({
+                cmd: "post_home",
                 post: {
                   _id: id,
                   p: data.p,
                   u: postClient.user,
                   e: JSON.stringify({ "t": timestamp }),
                   reply_to: replyToId,
-                  post_origin: "home",
-                  author: JSON.stringify({
-                    _id: postClient.user,
-                    pfp_data: "24",
-                    avatar: "null",
-                    avatar_color: "000000",
-                    flags: "0",
-                    uuid: "00000000-0000-0000-0000-000000000000",
-                  }),
-                  isDeleted: "false",
-                  emojis: [],
-                  pinned: false,
-                  post_id: id,
-                  attachments: [],
-                  reactions: [],
-                  type: "1",
-                },
+                  post_id: id
+                }
               });
-              function broadcast(message) {
+                function broadcast(message) {
                 const messageStr = typeof message === "string"
                   ? message
                   : JSON.stringify(message);
-                console.log(`Broadcasting to ${clients.size} total clients`);
                 let sentCount = 0;
                 let authenticatedCount = 0;
-
-                clients.forEach((clientData, clientSocket) => {
-                  console.log("Checking client:", {
-                    user: clientData.user,
-                    authenticated: clientData.authenticated,
-                    readyState: clientSocket.readyState,
-                    isOpen: clientSocket.readyState === WebSocket.OPEN,
-                  });
-
-                  if (clientData.authenticated) {
-                    authenticatedCount++;
+                if (data.token) {
+                  const user = db.queryEntries(
+                  "SELECT * FROM users WHERE token = ?",
+                  [data.token]
+                  )[0];
+                  if (user) {
+                  postClient = {
+                    authenticated: true,
+                    user: user.user
+                  };
+                  } else {
+                  socket.send(JSON.stringify({
+                    cmd: "post",
+                    status: "error", 
+                    message: "Invalid token"
+                  }));
+                  return;
                   }
-
+                }
+                clients.forEach((clientData, clientSocket) => {
+                  if (clientData.authenticated) {
+                  authenticatedCount++;
+                  }
                   if (
-                    clientData.authenticated &&
-                    clientSocket.readyState === WebSocket.OPEN
+                  clientData.authenticated &&
+                  clientSocket.readyState === WebSocket.OPEN
                   ) {
-                    try {
-                      clientSocket.send(messageStr);
-                      sentCount++;
-                    } catch (error) {
-                      console.error(
-                        "Broadcast error for user:",
-                        clientData.user,
-                        error,
-                      );
-                    }
+                  try {
+                    clientSocket.send(messageStr);
+                    sentCount++;
+                  } catch (error) {
+                    console.error(
+                    "Broadcast error for user:",
+                    clientData.user,
+                    error,
+                    );
+                  }
                   }
                 });
-
-                console.log(`Authentication summary:
-                    Total clients: ${clients.size}
-                    Authenticated clients: ${authenticatedCount}
-                    Successfully sent to: ${sentCount}
-                `);
-              }
+                if (data.token && socket.readyState === WebSocket.OPEN) {
+                  try {
+                  socket.send(messageStr);
+                  sentCount++;
+                  } catch (error) {
+                  console.error("Broadcast error for token client:", error);
+                  }
+                }
+                }
               broadcast(postNotification);
-              console.log("Post successful:", {
-                id: id,
-                user: postClient.user,
-                post: data.p,
-                timestamp: timestamp,
-                reply_to: replyToId,
-              });
             } catch (error) {
               console.log(chalk.red.bold("Post error:", error));
               socket.send(JSON.stringify({
@@ -471,7 +426,6 @@ Deno.serve({
           case "login":
             try {
               if (typeof data !== "object" || data === null) {
-                console.log(chalk.red.bold("Invalid data format received"));
                 socket.send(JSON.stringify({
                   cmd: "login",
                   status: "error",
@@ -519,12 +473,10 @@ Deno.serve({
                       status: "error",
                       message: {
                         "message": "ban",
-                        "reason": `${
-                          userData.ban_reason || "No reason provided"
-                        }`,
-                        "bannedDate": `${
-                          userData.ban_created_at || "Unknown date"
-                        }`,
+                        "reason": `${userData.ban_reason || "No reason provided"
+                          }`,
+                        "bannedDate": `${userData.ban_created_at || "Unknown date"
+                          }`,
                       },
                     }));
                     return;
@@ -624,25 +576,11 @@ Deno.serve({
             }
             break;
           case "fetch":
-            console.log("Fetch attempt:", data);
             const fetchClient = clients.get(socket);
-            if (!fetchClient?.authenticated) {
-              console.log("Unauthorized fetch attempt");
-              socket.send(JSON.stringify({
-                cmd: "fetch",
-                status: "error",
-                message: "unauthorized",
-              }));
-              return;
-            }
             try {
               const offset = data.offset || 0;
-              console.log(
-                "Fetching posts with offset:",
-                offset,
-              );
               const posts = db.queryEntries(
-                `SELECT _id, p, u, e, reply_to, author, post_origin, isDeleted, emojis, pinned, post_id, attachments, reactions, type FROM rtposts ORDER BY json_extract(e, '$.t') DESC LIMIT 10 OFFSET ${offset}`,
+                `SELECT _id, p, u, e, reply_to FROM rtposts ORDER BY json_extract(e, '$.t') DESC LIMIT 10 OFFSET ${offset}`,
               );
               socket.send(JSON.stringify({
                 cmd: "fetch",
