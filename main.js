@@ -9,7 +9,7 @@ const dev = 0
 const db = new DB("main.db");
 const clients = new Map();
 const octokit = new Octokit();
-const current = "Release 1 - Public Preview";
+const current = "r1-Preview-QUICKPATCH";
 function returndata(data, code) {
   return new Response(
     data,
@@ -364,7 +364,6 @@ Deno.serve({
                   ? message
                   : JSON.stringify(message);
                 let sentCount = 0;
-                let authenticatedCount = 0;
                 if (data.token) {
                   const user = db.queryEntries(
                   "SELECT * FROM users WHERE token = ?",
@@ -385,11 +384,7 @@ Deno.serve({
                   }
                 }
                 clients.forEach((clientData, clientSocket) => {
-                  if (clientData.authenticated) {
-                  authenticatedCount++;
-                  }
                   if (
-                  clientData.authenticated &&
                   clientSocket.readyState === WebSocket.OPEN
                   ) {
                   try {
@@ -409,7 +404,7 @@ Deno.serve({
                   socket.send(messageStr);
                   sentCount++;
                   } catch (error) {
-                  console.error("Broadcast error for token client:", error);
+                  console.error("Broadcast error for client:", error);
                   }
                 }
                 }
