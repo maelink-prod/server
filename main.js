@@ -7,7 +7,7 @@ console.log(chalk.blue(`Server is starting...`));
 const dev = 0
 const db = new DB("main.db");
 const clients = new Map();
-const current = "r1-prev2-quickpatch1.1";
+const current = "r1-prev2-quickpatch1.2";
 function returndata(data, code) {
   return new Response(
     data,
@@ -339,42 +339,7 @@ Deno.serve({
                   ? message
                   : JSON.stringify(message);
                 let sentCount = 0;
-                if (data.token) {
-                  const user = db.queryEntries(
-                  "SELECT * FROM users WHERE token = ?",
-                  [data.token]
-                  )[0];
-                  if (user) {
-                  postClient = {
-                    authenticated: true,
-                    user: user.user
-                  };
-                  } else {
-                  socket.send(JSON.stringify({
-                    cmd: "post",
-                    status: "error", 
-                    message: "Invalid token"
-                  }));
-                  return;
-                  }
-                }
-                clients.forEach((clientData, clientSocket) => {
-                  if (
-                  clientSocket.readyState === WebSocket.OPEN
-                  ) {
-                  try {
-                    clientSocket.send(messageStr);
-                    sentCount++;
-                  } catch (error) {
-                    console.error(
-                    "Broadcast error for user:",
-                    clientData.user,
-                    error,
-                    );
-                  }
-                  }
-                });
-                if (data.token && socket.readyState === WebSocket.OPEN) {
+                if (socket.readyState === WebSocket.OPEN) {
                   try {
                   socket.send(messageStr);
                   sentCount++;
@@ -1376,7 +1341,7 @@ Deno.serve({ port: 2387 }, async (req) => {
       return await handlePromote(req);
     case "/comment":
       return await handleComment(req);
-      case "/explore":
+    case "/explore":
       return await handleExplore(req);
     default:
       return new Response("Not Found", { status: 404 });
