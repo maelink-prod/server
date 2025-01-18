@@ -7,7 +7,7 @@ console.log(chalk.blue(`Server is starting...`));
 const dev = 0
 const db = new DB("main.db");
 const clients = new Map();
-const current = "r1-prev2-quickpatch1.2";
+const current = "r1-prev2-quickpatch1.3";
 function returndata(data, code) {
   return new Response(
     data,
@@ -334,17 +334,19 @@ Deno.serve({
                   post_id: id
                 }
               });
-                function broadcast(message) {
+              function broadcast(message) {
                 const messageStr = typeof message === "string"
                   ? message
                   : JSON.stringify(message);
                 let sentCount = 0;
-                if (socket.readyState === WebSocket.OPEN) {
-                  try {
-                  socket.send(messageStr);
-                  sentCount++;
-                  } catch (error) {
-                  console.error("Broadcast error for client:", error);
+                for (const [clientSocket, client] of clients) {
+                  if (clientSocket.readyState === WebSocket.OPEN) {
+                    try {
+                      clientSocket.send(messageStr);
+                      sentCount++;
+                    } catch (error) {
+                      console.error("Broadcast error for client:", error);
+                    }
                   }
                 }
                 }
