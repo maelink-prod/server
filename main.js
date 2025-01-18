@@ -7,8 +7,7 @@ console.log(chalk.blue(`Server is starting...`));
 const dev = 0
 const db = new DB("main.db");
 const clients = new Map();
-const octokit = new Octokit();
-const current = "r1-prev2-quickpatch1";
+const current = "r1-prev2-quickpatch1.1";
 function returndata(data, code) {
   return new Response(
     data,
