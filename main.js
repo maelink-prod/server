@@ -9,7 +9,7 @@ const dev = 0
 const db = new DB("main.db");
 const clients = new Map();
 const octokit = new Octokit();
-const current = "r1-Preview-QUICKPATCH-2-Revert";
+const current = "Release 1 Public Preview 2";
 function returndata(data, code) {
   return new Response(
     data,
@@ -870,6 +870,45 @@ async function handleFetch(req) {
     );
   }
 }
+async function handleExplore(req) {
+  const url = new URL(req.url);
+  const offset = parseInt(url.searchParams.get("offset") || "0");
+  if (isNaN(offset) || offset < 0) {
+    return returndata(
+      JSON.stringify({
+        status: "error",
+        message: "Invalid offset parameter",
+      }),
+      400,
+    );
+  }
+  try {
+    const posts = db.queryEntries(
+      `SELECT p.post, p.user, p.created_at, p.id, p.reply_to 
+       FROM posts p
+       ORDER BY p.created_at DESC 
+       LIMIT ? OFFSET ?`,
+      [10, offset],
+    );
+    const safePostsArray = Array.isArray(posts) ? posts : [];
+    return returndata(
+      JSON.stringify({
+        status: "success",
+        posts: safePostsArray,
+      }),
+      200,
+    );
+  } catch (e) {
+    console.log(chalk.red.bold("Post fetch error:"), e);
+    return returndata(
+      JSON.stringify({
+        status: "error",
+        message: `Failed to fetch posts: ${e.message}`,
+      }),
+      500,
+    );
+  }
+}
 async function handleFollows(req) {
   const auth = req.headers.get("Authorization");
   if (!auth) {
@@ -1362,6 +1401,8 @@ Deno.serve({ port: 2387 }, async (req) => {
       return await handlePromote(req);
     case "/comment":
       return await handleComment(req);
+      case "/explore":
+      return await handleExplore(req);
     default:
       return new Response("Not Found", { status: 404 });
   }
