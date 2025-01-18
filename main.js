@@ -1,15 +1,14 @@
 // deno-lint-ignore-file
-console.log(`Dependencies: Chalk (npm:chalk), Octokit REST (npm:@octokit/rest)
+console.log(`Dependencies: Chalk (npm:chalk)
 Install with "deno install <package_name>"`);
 import { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
-import { Octokit } from "npm:@octokit/rest";
 import chalk from "npm:chalk";
 console.log(chalk.blue(`Server is starting...`));
 const dev = 0
 const db = new DB("main.db");
 const clients = new Map();
 const octokit = new Octokit();
-const current = "Release 1 Public Preview 2";
+const current = "r1-prev2-quickpatch1";
 function returndata(data, code) {
   return new Response(
     data,
@@ -25,23 +24,6 @@ function returndata(data, code) {
     },
   );
 }
-async function commit(owner, repo, path, branch = "main") {
-  try {
-    const { data } = await octokit.repos.listCommits({
-      owner,
-      repo,
-      path,
-      per_page: 1,
-      sha: branch,
-    });
-    const commitSha = data[0].sha.substring(0, 7);
-    const commitName = data[0].commit.message;
-    return { sha: commitSha, name: commitName };
-  } catch (error) {
-    console.log(chalk.red.bold("Error fetching commit:", error));
-    throw error;
-  }
-}
 console.log(
   chalk.red.bold(
     `                       _        _    
@@ -54,21 +36,15 @@ console.log(
   )
 );
 
-if (dev === 1 || (await commit("delusionsGH", "maelink", "main.js")).name !== current) {
+if (dev === 1) {
     console.log(chalk.red.bold(`
-server - version (${current}) | DEV/OUTDATED`));
+server - version (${current}) | DEV`));
   } else {
   console.log(chalk.red.bold(`
-server - version (${(await commit("delusionsGH", "maelink", "main.js")).sha} - ${(await commit("delusionsGH", "maelink", "main.js")).name})`));
+server - version (${current})`));
 }
 
-if (dev === 0) {
-  if ((await commit("delusionsGH", "maelink", "main.js")).name !== current) {
-    console.log(chalk.red.bold(`
-WARNING: Server version mismatch!
-If this is a production environment, unless you know EXACTLY what you're doing, please use the current stable version (${(await commit("delusionsGH", "maelink", "main.js")).sha})`));
-  }
-} else if (dev === 1) {
+if (dev === 1) {
   console.log(chalk.yellow(`
 This is a development server! May be unstable, may crash, may do unexplainable things that transcend what is thought to be humanly possible. Use at your own risk.`));
 } else {
