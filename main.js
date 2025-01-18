@@ -7,7 +7,7 @@ console.log(chalk.blue(`Server is starting...`));
 const dev = 0
 const db = new DB("main.db");
 const clients = new Map();
-const current = "r1-prev2-quickpatch1.3";
+const current = "r1-prev2-quickpatch1.4-security";
 function returndata(data, code) {
   return new Response(
     data,
@@ -36,9 +36,9 @@ console.log(
 );
 
 if (dev === 1) {
-    console.log(chalk.red.bold(`
+  console.log(chalk.red.bold(`
 server - version (${current}) | DEV`));
-  } else {
+} else {
   console.log(chalk.red.bold(`
 server - version (${current})`));
 }
@@ -291,6 +291,23 @@ Deno.serve({
               }));
               return;
             }
+            const sanitizedPost = data.p
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;")
+              .replace(/&/g, "&amp;")
+              .replace(/"/g, "&quot;")
+              .replace(/'/g, "&#x27;")
+              .replace(/\//g, "&#x2F;")
+              .trim();
+
+            if (sanitizedPost.length === 0) {
+              socket.send(JSON.stringify({
+                cmd: "post",
+                status: "error",
+                message: "Post content cannot be empty",
+              }));
+              return;
+            }
             try {
               let replyToId = null;
               if (data.reply_to) {
@@ -316,8 +333,8 @@ Deno.serve({
               );
               stmt.execute([
                 id,
-                data.p,
-                postClient.user,
+                sanitizedPost,
+                postClient.user.replace(/[<>]/g, ''),
                 JSON.stringify({ t: timestamp }),
                 replyToId,
                 id
@@ -327,8 +344,8 @@ Deno.serve({
                 cmd: "post_home",
                 post: {
                   _id: id,
-                  p: data.p,
-                  u: postClient.user,
+                  p: sanitizedPost,
+                  u: postClient.user.replace(/[<>]/g, ''),
                   e: JSON.stringify({ "t": timestamp }),
                   reply_to: replyToId,
                   post_id: id
@@ -349,7 +366,7 @@ Deno.serve({
                     }
                   }
                 }
-                }
+              }
               broadcast(postNotification);
             } catch (error) {
               console.log(chalk.red.bold("Post error:", error));
