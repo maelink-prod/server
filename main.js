@@ -9,7 +9,7 @@ const dev = 0
 const db = new DB("main.db");
 const clients = new Map();
 const octokit = new Octokit();
-const current = "r1-Preview-QUICKPATCH";
+const current = "r1-Preview-QUICKPATCH-2";
 function returndata(data, code) {
   return new Response(
     data,
@@ -810,26 +810,6 @@ async function handlePost(req) {
   }
 }
 async function handleFetch(req) {
-  const auth = req.headers.get("Authorization");
-  if (!auth) {
-    return returndata(
-      JSON.stringify({
-        status: "error",
-        message: "Unauthorized",
-      }),
-      401,
-    );
-  }
-  const user = await checkUserAccess(auth);
-  if (!user) {
-    return returndata(
-      JSON.stringify({
-        status: "error",
-        message: "Invalid token",
-      }),
-      401,
-    );
-  }
   const url = new URL(req.url);
   const offset = parseInt(url.searchParams.get("offset") || "0");
   if (isNaN(offset) || offset < 0) {
