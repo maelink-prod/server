@@ -7,7 +7,7 @@ console.log(chalk.blue(`Server is starting...`));
 const dev = 0
 const db = new DB("main.db");
 const clients = new Map();
-const current = "r1-prev2-quickpatch1.4-security";
+const current = "r1-prev2-1.5";
 function returndata(data, code) {
   return new Response(
     data,
@@ -545,6 +545,27 @@ Deno.serve({
               console.log(chalk.red.bold("Fetch error:", error));
               socket.send(JSON.stringify({
                 cmd: "fetch",
+                status: "error",
+                message: "Failed to fetch posts",
+              }));
+            }
+            break;
+            case "fetchInd":
+            try {
+              const id = data.id
+                const posts = db.queryEntries(
+                `SELECT _id, p, u, e, reply_to FROM rtposts WHERE _id = ?`,
+                [id]
+                );
+              socket.send(JSON.stringify({
+                cmd: "fetchInd",
+                status: "success",
+                post: posts,
+              }));
+            } catch (error) {
+              console.log(chalk.red.bold("Fetch (individual) error:", error));
+              socket.send(JSON.stringify({
+                cmd: "fetchInd",
                 status: "error",
                 message: "Failed to fetch posts",
               }));
