@@ -291,16 +291,8 @@ Deno.serve({
               }));
               return;
             }
-            const sanitizedPost = data.p
-              .replace(/&/g, "&amp;")
-              .replace(/</g, "&lt;")
-              .replace(/>/g, "&gt;")
-              .replace(/"/g, "&quot;")
-              .replace(/'/g, "&#x27;")
-              .replace(/\//g, "&#x2F;")
-              .trim();
 
-            if (sanitizedPost.length === 0) {
+            if (data.p.length === 0) {
               socket.send(JSON.stringify({
                 cmd: "post",
                 status: "error",
@@ -333,7 +325,7 @@ Deno.serve({
               );
               stmt.execute([
                 id,
-                sanitizedPost,
+                data.p,
                 postClient.user.replace(/[<>]/g, ''),
                 JSON.stringify({ t: timestamp }),
                 replyToId,
@@ -344,7 +336,7 @@ Deno.serve({
                 cmd: "post_home",
                 post: {
                   _id: id,
-                  p: sanitizedPost,
+                  p: data.p,
                   u: postClient.user.replace(/[<>]/g, ''),
                   e: JSON.stringify({ "t": timestamp }),
                   reply_to: replyToId,
