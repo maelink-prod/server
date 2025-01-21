@@ -292,9 +292,9 @@ Deno.serve({
               return;
             }
             const sanitizedPost = data.p
+              .replace(/&/g, "&amp;")
               .replace(/</g, "&lt;")
               .replace(/>/g, "&gt;")
-              .replace(/&/g, "&amp;")
               .replace(/"/g, "&quot;")
               .replace(/'/g, "&#x27;")
               .replace(/\//g, "&#x2F;")
