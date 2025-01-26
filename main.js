@@ -136,6 +136,8 @@ Deno.serve({
     socket.addEventListener("message", (event) => {
       try {
         const data = JSON.parse(event.data);
+        // Lissener has friends: Lissiner, Lisserner, Isserner, and Listerner
+        const listener = {listener: data.listener ?? null}
         switch (data.cmd) {
           case "login":
             try {
@@ -143,7 +145,8 @@ Deno.serve({
                 socket.send(JSON.stringify({
                   cmd: "login",
                   status: "error",
-                  message: "Invalid data format"
+                  message: "Invalid data format",
+                  ...listener
                 }));
                 return;
               }
@@ -158,7 +161,8 @@ Deno.serve({
                     socket.send(JSON.stringify({
                       cmd: "login",
                       status: "error",
-                      message: "This account has been banned"
+                      message: "This account has been banned",
+                      ...listener
                     }));
                     return;
                   }
@@ -171,14 +175,16 @@ Deno.serve({
                   socket.send(JSON.stringify({
                     cmd: "login",
                     status: "success",
-                    payload: JSON.stringify({ token: userData.token })
+                    payload: JSON.stringify({ token: userData.token }),
+                    ...listener
                   }));
                   return;
                 } else {
                   socket.send(JSON.stringify({
                     cmd: "login",
                     status: "error",
-                    message: "Invalid token"
+                    message: "Invalid token",
+                    ...listener
                   }));
                   return;
                 }
@@ -188,6 +194,7 @@ Deno.serve({
                   cmd: "login",
                   status: "error",
                   message: "Username and password are required",
+                  ...listener
                 }));
                 return;
               }
@@ -210,6 +217,7 @@ Deno.serve({
                       cmd: "login",
                       status: "error",
                       message: "This account has been banned",
+                      ...listener
                     }));
                     return;
                   }
@@ -225,6 +233,7 @@ Deno.serve({
                       cmd: "login",
                       status: "success",
                       payload: JSON.stringify({ token: userData.token }),
+                      ...listener
                     }));
                     console.log("Login successful for user:", data.username);
                   } else {
@@ -232,6 +241,7 @@ Deno.serve({
                       cmd: "login",
                       status: "error",
                       message: "Invalid user data - missing token",
+                      ...listener
                     }));
                   }
                 } else {
@@ -247,6 +257,7 @@ Deno.serve({
                   cmd: "login",
                   status: "error",
                   message: "Error processing login",
+                  ...listener
                 }));
               });
             } catch (dbError) {
@@ -255,6 +266,7 @@ Deno.serve({
                 cmd: "login",
                 status: "error",
                 message: "Database error during login",
+                ...listener
               }));
             }
             break;
@@ -280,6 +292,7 @@ Deno.serve({
                 cmd: "post_home",
                 status: "error",
                 message: "Unauthorized",
+                ...listener
               }));
               return;
             }
@@ -288,6 +301,7 @@ Deno.serve({
                 cmd: "post",
                 status: "error",
                 message: "Invalid post data",
+                ...listener
               }));
               return;
             }
@@ -297,6 +311,7 @@ Deno.serve({
                 cmd: "post",
                 status: "error",
                 message: "Post content cannot be empty",
+                ...listener
               }));
               return;
             }
@@ -314,6 +329,7 @@ Deno.serve({
                     cmd: "post",
                     status: "error",
                     message: "Invalid reply_to post ID",
+                    ...listener
                   }));
                   return;
                 }
@@ -366,6 +382,7 @@ Deno.serve({
                 cmd: "post",
                 status: "error",
                 message: "Failed to save post",
+                ...listener
               }));
             }
             break;
@@ -376,6 +393,7 @@ Deno.serve({
                   cmd: "login",
                   status: "error",
                   message: "Invalid data format",
+                  ...listener
                 }));
                 return;
               }
@@ -388,6 +406,7 @@ Deno.serve({
                   cmd: "login",
                   status: "error",
                   message: "Username and password are required",
+                  ...listener
                 }));
                 return;
               }
@@ -424,6 +443,7 @@ Deno.serve({
                         "bannedDate": `${userData.ban_created_at || "Unknown date"
                           }`,
                       },
+                      ...listener
                     }));
                     return;
                   }
@@ -437,6 +457,7 @@ Deno.serve({
                       cmd: "login",
                       status: "success",
                       token: userData.token,
+                      ...listener
                     }));
                     console.log("Login successful for user:", data.username);
                   } else {
@@ -447,6 +468,7 @@ Deno.serve({
                       cmd: "login",
                       status: "error",
                       message: "Invalid user data - missing token",
+                      ...listener
                     }));
                   }
                 } else {
@@ -455,6 +477,7 @@ Deno.serve({
                     cmd: "login",
                     status: "error",
                     message: "Invalid username or password",
+                    ...listener
                   }));
                 }
               }).catch((error) => {
@@ -463,6 +486,7 @@ Deno.serve({
                   cmd: "login",
                   status: "error",
                   message: "Error processing login",
+                  ...listener
                 }));
               });
             } catch (dbError) {
@@ -471,6 +495,7 @@ Deno.serve({
                 cmd: "login",
                 status: "error",
                 message: "Database error during login",
+                ...listener
               }));
             }
             break;
@@ -504,6 +529,7 @@ Deno.serve({
                     cmd: "register",
                     status: "success",
                     token: token,
+                    ...listener
                   }));
                 });
             } catch (e) {
@@ -518,6 +544,7 @@ Deno.serve({
                 cmd: "register",
                 status: "error",
                 message: `Registration failed: ${e.message}`,
+                ...listener
               }));
             }
             break;
@@ -532,6 +559,7 @@ Deno.serve({
                 cmd: "fetch",
                 status: "success",
                 posts: posts,
+                ...listener
               }));
             } catch (error) {
               console.log(chalk.red.bold("Fetch error:", error));
@@ -539,6 +567,7 @@ Deno.serve({
                 cmd: "fetch",
                 status: "error",
                 message: "Failed to fetch posts",
+                ...listener
               }));
             }
             break;
@@ -553,6 +582,7 @@ Deno.serve({
                 cmd: "fetchInd",
                 status: "success",
                 post: posts,
+                ...listener
               }));
             } catch (error) {
               console.log(chalk.red.bold("Fetch (individual) error:", error));
@@ -560,6 +590,7 @@ Deno.serve({
                 cmd: "fetchInd",
                 status: "error",
                 message: "Failed to fetch posts",
+                ...listener
               }));
             }
             break;
@@ -572,6 +603,7 @@ Deno.serve({
                 cmd: "purge",
                 status: "error",
                 message: "unauthorized",
+                ...listener
               }));
               return;
             }
@@ -580,6 +612,7 @@ Deno.serve({
               socket.send(JSON.stringify({
                 cmd: "purge",
                 status: "success",
+                ...listener
               }));
             } catch (error) {
               console.log(chalk.red.bold("Purge error:", error));
@@ -587,6 +620,7 @@ Deno.serve({
                 cmd: "purge",
                 status: "error",
                 message: "Failed to purge posts",
+                ...listener
               }));
             }
             break;
@@ -596,6 +630,7 @@ Deno.serve({
         socket.send(JSON.stringify({
           status: "error",
           message: "Error processing message",
+          ...listener
         }));
       }
     });
