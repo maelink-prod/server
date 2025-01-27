@@ -638,7 +638,37 @@ Deno.serve({
   },
 });
 async function handleRegister(req) {
-  const data = await req.json();
+  if (req.method != 'POST')
+    return returndata(
+      JSON.stringify({
+        status: "error",
+        message: "This endpoint only accepts POST",
+      }),
+      400,
+    );
+  if (req.headers['content-type'] != 'application/json')
+    return returndata(
+      JSON.stringify({
+        status: "error",
+        message: "This endpoint only accepts JSON",
+      }),
+      400,
+    );
+  
+  let data;
+
+  try {
+    data = await req.json();
+  } catch (error) {
+    return returndata(
+      JSON.stringify({
+        status: "error",
+        message: "Invalid JSON",
+      }),
+      400,
+    );
+  }
+
   try {
     if (!data.user || !data.password) {
       return returndata(
@@ -683,7 +713,37 @@ async function handleRegister(req) {
   }
 }
 async function handleLogin(req) {
-  const data = await req.json();
+  if (req.method != 'POST')
+    return returndata(
+      JSON.stringify({
+        status: "error",
+        message: "This endpoint only accepts POST",
+      }),
+      400,
+    );
+  if (req.headers['content-type'] != 'application/json')
+    return returndata(
+      JSON.stringify({
+        status: "error",
+        message: "This endpoint only accepts JSON",
+      }),
+      400,
+    );
+  
+  let data;
+
+  try {
+    data = await req.json();
+  } catch (error) {
+    return returndata(
+      JSON.stringify({
+        status: "error",
+        message: "Invalid JSON",
+      }),
+      400,
+    );
+  }
+
   try {
     if (!data.username || !data.password) {
       return returndata(
@@ -765,6 +825,14 @@ async function checkUserAccess(auth, target_user = null) {
   return user;
 }
 async function handlePost(req) {
+  if (req.method != 'POST')
+    return returndata(
+      JSON.stringify({
+        status: "error",
+        message: "This endpoint only accepts POST",
+      }),
+      400,
+    );
   const auth = req.headers.get("Authorization");
   if (!auth) {
     return returndata(
@@ -788,7 +856,29 @@ async function handlePost(req) {
       401,
     );
   }
-  const data = await req.json();
+  if (req.headers['content-type'] != 'application/json')
+    return returndata(
+      JSON.stringify({
+        status: "error",
+        message: "This endpoint only accepts JSON",
+      }),
+      400,
+    );
+  
+  let data;
+
+  try {
+    data = await req.json();
+  } catch (error) {
+    return returndata(
+      JSON.stringify({
+        status: "error",
+        message: "Invalid JSON",
+      }),
+      400,
+    );
+  }
+
   try {
     const id = crypto.randomUUID();
     const timestamp = Date.now();
@@ -978,7 +1068,28 @@ async function handleBlock(req) {
     );
   }
   if (req.method === "POST") {
-    const data = await req.json();
+    if (req.headers['content-type'] != 'application/json')
+      return returndata(
+        JSON.stringify({
+          status: "error",
+          message: "This endpoint only accepts JSON",
+        }),
+        400,
+      );
+    
+    let data;
+  
+    try {
+      data = await req.json();
+    } catch (error) {
+      return returndata(
+        JSON.stringify({
+          status: "error",
+          message: "Invalid JSON",
+        }),
+        400,
+      );
+    }  
     if (!data.user) {
       return returndata(
         JSON.stringify({
@@ -1042,6 +1153,16 @@ async function handleBlock(req) {
         500,
       );
     }
+  } else {
+
+  if (req.method != 'POST')
+    return returndata(
+      JSON.stringify({
+        status: "error",
+        message: "This endpoint only accepts POST and DELETE",
+      }),
+      400,
+    );
   }
 }
 async function handleBan(req) {
@@ -1057,7 +1178,28 @@ async function handleBan(req) {
     );
   }
   if (req.method === "POST") {
-    const data = await req.json();
+    if (req.headers['content-type'] != 'application/json')
+      return returndata(
+        JSON.stringify({
+          status: "error",
+          message: "This endpoint only accepts JSON",
+        }),
+        400,
+      );
+    
+    let data;
+  
+    try {
+      data = await req.json();
+    } catch (error) {
+      return returndata(
+        JSON.stringify({
+          status: "error",
+          message: "Invalid JSON",
+        }),
+        400,
+      );
+    }  
     if (!data.user) {
       return returndata(
         JSON.stringify({
@@ -1122,6 +1264,14 @@ async function handleBan(req) {
         500,
       );
     }
+  } else {
+    return returndata(
+      JSON.stringify({
+        status: "error",
+        message: "This endpoint only accepts POST and DELETE",
+      }),
+      400,
+    );
   }
 }
 async function handleUserPosts(req) {
@@ -1186,7 +1336,28 @@ async function handleFollow(req) {
     );
   }
   if (req.method === "POST") {
-    const data = await req.json();
+    if (req.headers['content-type'] != 'application/json')
+      return returndata(
+        JSON.stringify({
+          status: "error",
+          message: "This endpoint only accepts JSON",
+        }),
+        400,
+      );
+    
+    let data;
+
+    try {
+      data = await req.json();
+    } catch (error) {
+      return returndata(
+        JSON.stringify({
+          status: "error",
+          message: "Invalid JSON",
+        }),
+        400,
+      );
+    }
     if (!data.user) {
       return returndata(
         JSON.stringify({
@@ -1274,7 +1445,28 @@ async function handlePromote(req) {
     );
   }
   if (req.method === "POST") {
-    const data = await req.json();
+    if (req.headers['content-type'] != 'application/json')
+      return returndata(
+        JSON.stringify({
+          status: "error",
+          message: "This endpoint only accepts JSON",
+        }),
+        400,
+      );
+    
+    let data;
+  
+    try {
+      data = await req.json();
+    } catch (error) {
+      return returndata(
+        JSON.stringify({
+          status: "error",
+          message: "Invalid JSON",
+        }),
+        400,
+      );
+    }
     if (!data.user) {
       return returndata(
         JSON.stringify({
@@ -1299,6 +1491,14 @@ async function handlePromote(req) {
         500,
       );
     }
+  } else {
+    return returndata(
+      JSON.stringify({
+        status: "error",
+        message: "This endpoint only accepts POST",
+      }),
+      400,
+    );
   }
 }
 async function handleComment(req) {
@@ -1311,7 +1511,28 @@ async function handleComment(req) {
     );
   }
   if (req.method === "POST") {
-    const data = await req.json();
+    if (req.headers['content-type'] != 'application/json')
+      return returndata(
+        JSON.stringify({
+          status: "error",
+          message: "This endpoint only accepts JSON",
+        }),
+        400,
+      );
+    
+    let data;
+  
+    try {
+      data = await req.json();
+    } catch (error) {
+      return returndata(
+        JSON.stringify({
+          status: "error",
+          message: "Invalid JSON",
+        }),
+        400,
+      );
+    }
     if (!data.comment) {
       return returndata(
         JSON.stringify({
@@ -1340,8 +1561,7 @@ async function handleComment(req) {
         500,
       );
     }
-  }
-  if (req.method === "GET") {
+  } else if (req.method === "GET") {
     const url = new URL(req.url);
     const postId = url.searchParams.get("post_id");
     if (!postId) {
@@ -1368,6 +1588,14 @@ async function handleComment(req) {
         500,
       );
     }
+  } else {
+    return returndata(
+      JSON.stringify({
+        status: "error",
+        message: "This endpoint only accepts POST and DELETE",
+      }),
+      400,
+    );
   }
 }
 Deno.serve({ port: 2387 }, async (req) => {
