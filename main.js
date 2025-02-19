@@ -61,6 +61,19 @@ async function autoPromote() {
   }
 }
 autoPromote();
+function cleanupInvalidUsers() {
+  try {
+    db.execute(`
+      DELETE FROM users 
+      WHERE user REGEXP '[^A-Za-z0-9\-_]' 
+      OR LENGTH(user) > 37
+      OR user LIKE '% %'
+    `);
+  } catch (e) {
+    console.log(chalk.red.bold("Error cleaning up invalid users:", e));
+  }
+}
+cleanupInvalidUsers();
 db.execute(`
   CREATE TABLE IF NOT EXISTS users (
     user TEXT PRIMARY KEY NOT NULL,
