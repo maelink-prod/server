@@ -659,7 +659,7 @@ async function handleRegister(req) {
       }),
       400,
     );
-  if (req.headers['content-type'] != 'application/json')
+  if (req.headers['Content-Type'] != 'application/json')
     return returndata(
       JSON.stringify({
         status: "error",
@@ -742,7 +742,7 @@ async function handleLogin(req) {
       }),
       400,
     );
-  if (req.headers['content-type'] != 'application/json')
+  if (req.headers['Content-Type'] != 'application/json')
     return returndata(
       JSON.stringify({
         status: "error",
@@ -877,7 +877,7 @@ async function handlePost(req) {
       401,
     );
   }
-  if (req.headers['content-type'] != 'application/json')
+  if (req.headers['Content-Type'] != 'application/json')
     return returndata(
       JSON.stringify({
         status: "error",
@@ -1089,7 +1089,7 @@ async function handleBlock(req) {
     );
   }
   if (req.method === "POST") {
-    if (req.headers['content-type'] != 'application/json')
+    if (req.headers['Content-Type'] != 'application/json')
       return returndata(
         JSON.stringify({
           status: "error",
@@ -1199,7 +1199,7 @@ async function handleBan(req) {
     );
   }
   if (req.method === "POST") {
-    if (req.headers['content-type'] != 'application/json')
+    if (req.headers['Content-Type'] != 'application/json')
       return returndata(
         JSON.stringify({
           status: "error",
@@ -1357,7 +1357,7 @@ async function handleFollow(req) {
     );
   }
   if (req.method === "POST") {
-    if (req.headers['content-type'] != 'application/json')
+    if (req.headers['Content-Type'] != 'application/json')
       return returndata(
         JSON.stringify({
           status: "error",
@@ -1466,7 +1466,7 @@ async function handlePromote(req) {
     );
   }
   if (req.method === "POST") {
-    if (req.headers['content-type'] != 'application/json')
+    if (req.headers['Content-Type'] != 'application/json')
       return returndata(
         JSON.stringify({
           status: "error",
@@ -1532,7 +1532,7 @@ async function handleComment(req) {
     );
   }
   if (req.method === "POST") {
-    if (req.headers['content-type'] != 'application/json')
+    if (req.headers['Content-Type'] != 'application/json')
       return returndata(
         JSON.stringify({
           status: "error",
