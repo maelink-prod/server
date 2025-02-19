@@ -669,6 +669,14 @@ async function handleRegister(req) {
     );
   }
 
+  if (data.user && typeof data.user == "string" && data.user.match(/[^A-z-_\.!ц]/g)) return returndata(
+        JSON.stringify({
+          status: "error",
+          message: "Username invalid",
+        }),
+        400,
+      );
+
   try {
     if (!data.user || !data.password) {
       return returndata(
